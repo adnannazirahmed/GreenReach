@@ -1,0 +1,16 @@
+{
+  "name": "greenreach",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Self-hosted, open-source Reddit opportunity discovery and research workspace",
+  "type": "module",
+  "engines": { "node": ">=24.0.0" },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server/index.js",
+    "dev": "node --env-file-if-exists=.env --watch server/index.js",
+    "test": "node --test tests/*.test.js",
+    "check": "node --check server/index.js && node --check server/providers.js && node --check public/app.js",
+    "mcp": "node --env-file-if-exists=.env server/mcp.js"
+  },
+  "license": "MIT"
+}

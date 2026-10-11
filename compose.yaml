@@ -1,0 +1,15 @@
+services:
+  greenreach:
+    build: .
+    ports:
+      - "127.0.0.1:4310:4310"
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      DATABASE_PATH: /app/data/greenreach.db
+      APP_TOKEN: ${APP_TOKEN:?Set APP_TOKEN in .env before starting Docker}
+    volumes:
+      - greenreach-data:/app/data
+    restart: unless-stopped
+volumes:
+  greenreach-data:
