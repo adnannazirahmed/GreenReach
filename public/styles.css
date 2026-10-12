@@ -7,3 +7,5 @@
 @media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
 
 .mobile-page-select{display:none}@media(max-width:680px){.breadcrumb>strong{display:none}.mobile-page-select{display:block;background:transparent;border:0;color:#526b48;font-size:11px;max-width:140px}.hero p,.opp-excerpt,.metric-foot,.panel>p,.subheading,.small.muted{color:#70806a}.hero p{color:#b9ccbd}}
+
+#credential-settings{margin-top:16px}#credential-settings h3{margin:22px 0 10px;color:#536d46}.provider-credential{display:flex;align-items:flex-end;gap:10px;margin-bottom:12px}.provider-credential .field{flex:1;min-width:0;margin:0}.provider-credential .btn{white-space:nowrap;margin-bottom:0}

@@ -47,11 +47,11 @@ When binding outside loopback, `APP_TOKEN` is required. Tokens are compared with
 
 The shared token is not multi-user authentication. All authorized users can read and edit all projects. Put remote deployments behind HTTPS and an authenticated proxy. The app does not implement distributed locks, a global rate limiter, audit-grade records, or optimistic locking; a trusted single operator is the intended first-release deployment. Website research pins DNS resolution to public addresses, rejects redirects, and bounds pages, response sizes, and request time; it is not a general-purpose crawler and does not bypass bot protections.
 
-Ollama receives project facts, supplied thread text, and notes when drafting. Keep sensitive information out of content sent to a remote model server. Provider keys stay in the environment and `.env` is ignored. Google keys are carried in requests to its provider endpoint, as required by that API; requests and URLs are not logged by this app.
+Ollama receives project facts, supplied thread text, and notes when drafting. Keep sensitive information out of content sent to a remote model server. Provider keys can come from the environment or the Settings credential form. Form values are AES-256-GCM encrypted in SQLite with a random local key file beside the database (or an operator-supplied `CREDENTIALS_ENCRYPTION_KEY`); status APIs return booleans only. `.env` is ignored. Google keys are carried in requests to its provider endpoint, as required by that API; requests and URLs are not logged by this app.
 
 ## Back up and restore
 
-For a simple consistent backup, stop the server and copy the entire `data` directory, including any SQLite WAL/SHM companions. Restore it while the server is stopped. Keep `.env` separately and restrict access to both: conversations and private drafts may be sensitive. JSON/CSV exports are for portability and inspection, not a full restore mechanism. There are no schema migrations beyond initial table creation in version 0.1.0.
+For a simple consistent backup, stop the server and copy the entire `data` directory, including SQLite WAL/SHM companions and `greenreach.credentials.key`. Restore it while the server is stopped. Keep `.env` separately and restrict access to both: conversations, private drafts, and encrypted provider credentials may be sensitive. JSON/CSV exports are for portability and inspection, not a full restore mechanism. There are no schema migrations beyond initial table creation in version 0.1.0.
 
 ## Data access boundaries
 

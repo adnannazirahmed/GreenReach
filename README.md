@@ -23,6 +23,7 @@ The app binds to loopback by default and stores data in `data/greenreach.db`. No
 - Multiple projects, product context, audience, voice, keywords, competitors, and ignored subreddits.
 - Persistent opportunity inbox with search, sorting, intent filters, saved records, and workflow states.
 - **Reddit API** post search and **SerpAPI Google** organic-result discovery with your own authorized credentials.
+- Enter Reddit, SerpAPI, and OpenAI credentials directly in **Settings**; values are encrypted in the local SQLite workspace and never returned to the browser.
 - Bounded product-site research that checks `robots.txt`, reads up to four same-domain pages, blocks private network targets, and previews text before it changes project context.
 - Explainable rules-based scoring; optional **Ollama or OpenAI-compatible** analysis, keyword suggestions, and draft generation.
 - Brand and competitor matching, conversation sentiment, and observed Google positions.
@@ -51,15 +52,18 @@ Copy-Item .env.example .env
 | `SERPAPI_KEY` | Google organic results through your provider account |
 | `OLLAMA_URL` | Default `http://127.0.0.1:11434`; administrator-controlled endpoint |
 | `OLLAMA_MODEL` | Name of a model you have installed in Ollama; empty disables AI |
-| `OPENAI_API_KEY` | Optional OpenAI API key; keep it only in the server environment |
+| `OPENAI_API_KEY` | Optional OpenAI API key; configure in .env or Settings |
 | `OPENAI_MODEL` | Model available to your API account; OpenAI takes precedence when configured |
 | `OPENAI_BASE_URL` | Optional OpenAI-compatible API origin; defaults to `https://api.openai.com` |
+| `CREDENTIALS_ENCRYPTION_KEY` | Optional base64-encoded 32-byte key override; otherwise GreenReach creates `data/greenreach.credentials.key` |
 | `SYNC_INTERVAL_MINUTES` | `0` disables scheduling; enabled values have a 5-minute minimum |
 | `APP_TOKEN` | Shared workspace bearer token; required for a non-loopback bind |
 | `HOST`, `PORT` | Default `127.0.0.1`, `4310` |
 | `DATABASE_PATH` | Default `./data/greenreach.db` |
 
 For local AI, install [Ollama](https://ollama.com/), pull a suitable instruction model supported by your machine, and set `OLLAMA_MODEL` to its exact installed name. For cloud AI, create an API key with model access and set `OPENAI_API_KEY` and `OPENAI_MODEL`. The OpenAI adapter uses Chat Completions JSON mode and does not request stored completions. `OPENAI_BASE_URL` lets an administrator point to an OpenAI-compatible service. A provider configured in the environment is not necessarily reachable; failed calls show an error and never silently replace AI output with a template. Cloud providers may charge for each call. No AI model is bundled. A downloaded model's license is separate from this application's MIT license.
+
+You can also add Reddit, SerpAPI, and OpenAI credentials in **Settings → API credentials**. The form accepts secrets once, stores them encrypted in SQLite, and only reports whether a value is configured. Blank fields leave existing values alone; use **Clear saved** to remove a value entered through the form. Credentials already supplied through `.env` remain supported. The encryption key is created automatically in the `data` directory; preserve it with your database backup or saved credentials cannot be decrypted after restore. Saving form values takes effect immediately without a server restart.
 
 Website research needs no API key. Enter a public HTTPS project website, open **Settings**, and select **Research website**. GreenReach checks its `robots.txt`, retrieves the homepage and at most three relevant links on the same host, then lets you review up to 20,000 characters before using up to 5,000 characters as project context. It is limited to port 443, does not follow redirects, and stops at 1 MB per page. If `robots.txt` is unavailable, only the homepage is read. It does not bypass bot protections or run a general-purpose crawl.
 
@@ -135,7 +139,7 @@ npm run check
 npm test
 ```
 
-Tests cover validation, URL canonicalization, deduplication, transactional imports, SQLite persistence, AI output validation, provider failure handling, draft/pipeline workflows, CSV injection protection, access controls, and read-only MCP. Provider tests use fixtures: live Reddit/SerpAPI/Ollama calls need your credentials/runtime. Docker packaging is supplied but requires a local Docker installation to verify.
+Tests cover validation, URL canonicalization, deduplication, transactional imports, SQLite persistence, AI output validation, provider failure handling, draft/pipeline workflows, CSV injection protection, access controls, and read-only MCP. Provider tests use fixtures: live Reddit/SerpAPI/OpenAI calls need your credentials; Ollama calls need your local model runtime. Docker packaging is supplied but requires a local Docker installation to verify.
 
 ## Current limits
 

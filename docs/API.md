@@ -6,6 +6,7 @@ Base URL: `http://127.0.0.1:4310/api`. Use `Content-Type: application/json` on w
 | --- | --- | --- |
 | GET | `/health` | Version and server status |
 | GET | `/config` | Boolean provider configuration, model name, scheduler interval, busy projects; no secrets |
+| PATCH | `/config/credentials` | `{ "credentials": { "OPENAI_API_KEY": "..." }, "clear": ["SERPAPI_KEY"] }`; store or clear supported provider values |
 | GET / POST | `/projects` | List projects / create project |
 | GET / PATCH / DELETE | `/projects/:id` | Read, edit, or permanently delete project and related data |
 | GET | `/projects/:id/opportunities` | Stored records |
@@ -23,6 +24,8 @@ Base URL: `http://127.0.0.1:4310/api`. Use `Content-Type: application/json` on w
 Create a project with `name`, HTTPS `website`, and optional `description`, `audience`, `voice`, `keywords` (string array), `competitors` (string array), `ignoredSubreddits` (string array), `monitoring` (boolean). Project PATCH accepts those same fields. Name is required, at most 80 characters. Description is at most 5000. Up to 20 keywords and 10 competitors are supported. Settings edits recalculate rules-based classifications.
 
 AI analysis, keyword suggestions, and drafts use OpenAI when both `OPENAI_API_KEY` and `OPENAI_MODEL` are configured; otherwise they use Ollama when `OLLAMA_MODEL` is configured. If neither provider is configured, analysis is rules-based and drafts are labeled templates. `OPENAI_BASE_URL` is an optional administrator-controlled OpenAI-compatible API origin.
+
+The Settings screen can store Reddit, SerpAPI, and OpenAI values in the SQLite credential table, encrypted with AES-256-GCM. `/api/config` returns provider capability and credential-presence booleans only; it never returns values. Blank fields keep current values. A `clear` entry removes only the saved database value, so an environment value can still supply that credential. GreenReach generates `greenreach.credentials.key` beside the database on first run unless `CREDENTIALS_ENCRYPTION_KEY` supplies a base64-encoded 32-byte key. Keep the key with backups of the database; losing it makes saved credentials unrecoverable.
 
 Website research uses the project's configured HTTPS website; the request body cannot select a URL. It checks `robots.txt`, resolves and pins public DNS addresses, reads at most four HTML pages on that same hostname, and returns at most 20,000 characters. Redirects are rejected, each response is limited to 1 MB and 12 seconds, and a missing or unavailable robots file limits research to the homepage. Review text before adding it to product context. This endpoint does not use AI or require a scraping service API key.
 

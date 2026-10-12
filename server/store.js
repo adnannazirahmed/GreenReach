@@ -4,13 +4,15 @@ import { dirname, resolve } from 'node:path';
 
 export class Store {
   constructor(path = process.env.DATABASE_PATH || './data/greenreach.db') {
+    this.path = path;
     if (path !== ':memory:') mkdirSync(dirname(resolve(path)), { recursive: true });
     this.db = new DatabaseSync(path);
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS opportunities (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, url TEXT NOT NULL, data TEXT NOT NULL, UNIQUE(project_id,url));
       CREATE INDEX IF NOT EXISTS opportunities_project ON opportunities(project_id);
-      CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, project_id TEXT, data TEXT NOT NULL);`);
+      CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, project_id TEXT, data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS credentials (name TEXT PRIMARY KEY, value TEXT NOT NULL);`);
   }
   projects() { return this.db.prepare('SELECT data FROM projects ORDER BY rowid').all().map(r => JSON.parse(r.data)); }
   project(id) { const row = this.db.prepare('SELECT data FROM projects WHERE id=?').get(id); return row ? JSON.parse(row.data) : null; }
@@ -26,5 +28,8 @@ export class Store {
   deleteItem(id) { this.db.prepare('DELETE FROM opportunities WHERE id=?').run(id); }
   event(pid, text, kind = 'activity') { const e = { text, kind, at: new Date().toISOString() }; this.db.prepare('INSERT INTO events(project_id,data) VALUES (?,?)').run(pid, JSON.stringify(e)); return e; }
   events(pid) { return this.db.prepare('SELECT data FROM events WHERE project_id=? ORDER BY id DESC LIMIT 60').all(pid).map(r => JSON.parse(r.data)); }
+  credentials() { return this.db.prepare('SELECT name, value FROM credentials').all(); }
+  setCredential(name, value) { this.db.prepare('INSERT INTO credentials(name,value) VALUES (?,?) ON CONFLICT(name) DO UPDATE SET value=excluded.value').run(name, value); }
+  deleteCredential(name) { this.db.prepare('DELETE FROM credentials WHERE name=?').run(name); }
   close() { this.db.close(); }
 }

@@ -7,11 +7,14 @@ import { seed } from './seed.js';
 import { id, now, str, AppError, projectInput, opportunityInput, analyze, csv } from './domain.js';
 import { capabilities, discover, draftReply, aiAnalyze, suggestKeywords } from './providers.js';
 import { researchWebsite } from './site-research.js';
+import { CredentialVault } from './credential-vault.js';
 
 const STATIC = new Map([['/', ['index.html', 'text/html']], ['/app.js', ['app.js', 'text/javascript']], ['/styles.css', ['styles.css', 'text/css']], ['/favicon.svg', ['favicon.svg', 'image/svg+xml']]]);
 function equal(a, b) { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); }
 export function createApp({ store = new Store(), env = process.env, fetcher = fetch, demo = true } = {}) {
   if (demo) seed(store);
+  const credentialVault = new CredentialVault(store, env);
+  const providerEnv = () => ({ ...env, ...credentialVault.all() });
   const busy = new Set();
   const siteBusy = new Set();
   const requireProject = pid => { const p = store.project(pid); if (!p) throw new AppError('Project not found.', 404); return p; };
@@ -22,7 +25,7 @@ export function createApp({ store = new Store(), env = process.env, fetcher = fe
     if (busy.has(pid)) throw new AppError('A discovery run is already active for this project.', 409);
     busy.add(pid);
     try {
-      const result = await discover(p, provider, env, fetcher);
+      const result = await discover(p, provider, providerEnv(), fetcher);
       let inserted = 0, updated = 0;
       // All requests succeed before data is committed, so a failed run cannot look successful.
       store.transaction(() => {
@@ -69,7 +72,30 @@ export function createApp({ store = new Store(), env = process.env, fetcher = fe
       if (env.APP_TOKEN && !equal(req.headers.authorization || '', `Bearer ${env.APP_TOKEN}`)) throw new AppError('Enter your APP_TOKEN to open this workspace.', 401);
       const method = req.method;
       if (url.pathname === '/api/health' && method === 'GET') return send({ ok: true, version: '0.1.0' });
-      if (url.pathname === '/api/config' && method === 'GET') return send({ ...capabilities(env), busy: [...busy] });
+      if (url.pathname === '/api/config' && method === 'GET') return send({ ...capabilities(providerEnv()), credentialStatus: credentialVault.status(env), savedCredentialStatus: credentialVault.savedStatus(), busy: [...busy] });
+      if (url.pathname === '/api/config/credentials' && method === 'PATCH') {
+        const data = await body(req), values = data.credentials ?? {}, clear = data.clear ?? [];
+        const limits = { REDDIT_ACCESS_TOKEN: 4096, REDDIT_CLIENT_ID: 512, REDDIT_CLIENT_SECRET: 512, REDDIT_USER_AGENT: 256, SERPAPI_KEY: 512, OPENAI_API_KEY: 512, OPENAI_MODEL: 120, OPENAI_BASE_URL: 500 };
+        if (!values || typeof values !== 'object' || Array.isArray(values) || Object.keys(values).some(key => !Object.hasOwn(limits, key))) throw new AppError('Use supported provider credential fields only.');
+        if (!Array.isArray(clear) || clear.length > Object.keys(limits).length || !clear.every(key => typeof key === 'string' && Object.hasOwn(limits, key))) throw new AppError('Choose valid saved credentials to clear.');
+        const pending = [];
+        for (const [name, raw] of Object.entries(values)) {
+          if (typeof raw !== 'string' || raw.length > limits[name]) throw new AppError(`${name} must be text at most ${limits[name]} characters long.`);
+          const value = raw.trim();
+          if (!value) continue;
+          if (clear.includes(name)) throw new AppError(`Do not enter and clear ${name} in the same request.`);
+          if (name === 'OPENAI_BASE_URL') {
+            let parsed; try { parsed = new URL(value); } catch { throw new AppError('OPENAI_BASE_URL must be a valid HTTPS origin.'); }
+            if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) throw new AppError('OPENAI_BASE_URL must be an HTTPS origin without credentials, a path, or query parameters.');
+          }
+          pending.push([name, value]);
+        }
+        store.transaction(() => {
+          for (const [name, value] of pending) credentialVault.set(name, value);
+          for (const name of clear) credentialVault.delete(name);
+        });
+        return send({ ...capabilities(providerEnv()), credentialStatus: credentialVault.status(env), savedCredentialStatus: credentialVault.savedStatus(), busy: [...busy] });
+      }
       if (url.pathname === '/api/projects' && method === 'GET') return send(store.projects());
       if (url.pathname === '/api/projects' && method === 'POST') {
         const data = await body(req); const p = store.saveProject({ ...projectInput(data), id: id(), createdAt: now(), sample: false }); store.event(p.id, 'Project created. Add conversations or connect a discovery provider.'); return send(p, 201);
@@ -86,7 +112,7 @@ export function createApp({ store = new Store(), env = process.env, fetcher = fe
         if (action === 'opportunities' && method === 'GET') return send(store.items(pid));
         if (action === 'events' && method === 'GET') return send(store.events(pid));
         if (action === 'sync' && method === 'POST') return send(await sync(pid, (await body(req)).provider));
-        if (action === 'keywords' && method === 'POST') { await body(req); return send(await suggestKeywords(p, env, fetcher)); }
+        if (action === 'keywords' && method === 'POST') { await body(req); return send(await suggestKeywords(p, providerEnv(), fetcher)); }
         if (action === 'research' && method === 'POST') {
           await body(req);
           if (p.sample) throw new AppError('Create your own project before researching a website.');
@@ -130,11 +156,11 @@ export function createApp({ store = new Store(), env = process.env, fetcher = fe
           return send(next);
         }
         if (action === 'draft' && method === 'POST') {
-          await body(req); const draft = await draftReply(item, p, env, fetcher);
+          await body(req); const draft = await draftReply(item, p, providerEnv(), fetcher);
           const latest = requireItem(iid); const next = { ...latest, draft: draft.text, draftMethod: draft.method, status: latest.status === 'new' ? 'reviewing' : latest.status };
           store.saveItem(next); store.event(p.id, `${draft.method === 'template' ? 'Template' : 'AI'} draft created for “${item.title}”.`); return send(next);
         }
-        if (action === 'analyze' && method === 'POST') { await body(req); const analysis = await aiAnalyze(item, p, env, fetcher); return send(store.saveItem({ ...requireItem(iid), analysis })); }
+        if (action === 'analyze' && method === 'POST') { await body(req); const analysis = await aiAnalyze(item, p, providerEnv(), fetcher); return send(store.saveItem({ ...requireItem(iid), analysis })); }
       }
       throw new AppError('Not found.', 404);
     } catch (e) {
@@ -146,7 +172,7 @@ export function createApp({ store = new Store(), env = process.env, fetcher = fe
   if (minutes > 0) {
     timer = setInterval(async () => {
       for (const p of store.projects().filter(p => p.monitoring && !p.sample)) {
-        for (const provider of ['reddit', 'google'].filter(k => capabilities(env)[k])) { try { await sync(p.id, provider); } catch { /* error recorded in activity log */ } }
+        for (const provider of ['reddit', 'google'].filter(k => capabilities(providerEnv())[k])) { try { await sync(p.id, provider); } catch { /* error recorded in activity log */ } }
       }
     }, Math.max(5, minutes) * 60000); timer.unref();
   }
