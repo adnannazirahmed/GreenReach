@@ -8,7 +8,7 @@ Build a usable self-hosted application around projects, configurable keywords an
 
 | Area | Initial implementation target | Honest boundary |
 | --- | --- | --- |
-| Project setup | Editable identity, domain, description, keywords, competitors, exclusions | Manual configuration is not a full automatic website audit |
+| Project setup | Editable identity, domain, description, keywords, competitors, exclusions; optional bounded public-site text research | Website research covers four same-host HTML pages, not a full website audit |
 | Discovery | Reddit OAuth post search, Google organic results via SerpAPI, and JSON import | Credentials and provider access are required for live connectors; CSV is export-only in this release |
 | Sample workspace | Clearly labeled synthetic records for exploring every main workflow | Demo activity is not live monitoring or measured customer performance |
 | Ranking | Explainable deterministic scoring; optional Ollama classification | Baseline scores are rules, not AI predictions or conversion probabilities |
@@ -38,7 +38,7 @@ Acceptance criteria:
 1. Add authorized comment and full-thread retrieval with pagination, bounded context, and coverage indicators. Define an explicit retention and source-deletion reconciliation process.
 2. Store search observations separately from opportunities: query, country, language, device, timestamp, rank, and provider. Show rank history only when multiple genuine observations exist.
 3. Add a keyword-volume provider with provenance and observation dates. Retain null values if unavailable; do not derive traffic from arbitrary scores.
-4. Add website context extraction with protection against private-network requests, content-size limits, and visible review of generated terms.
+4. Extend website context extraction with reusable user-reviewed selectors and page-type rules; preserve private-network protection, content-size limits, and visible review before applying results.
 5. Introduce a labeled evaluation dataset, original or appropriately licensed, covering relevant and irrelevant matches, common-word brands, mixed sentiment, and requests for alternatives.
 6. Compare ranking precision and draft usefulness across local models. Record model and prompt changes so results can be reproduced.
 7. Store rejection reasons and offer suggested filter changes for user review. Do not describe this as model training unless a real training process is implemented.

@@ -6,12 +6,14 @@ import { Store } from './store.js';
 import { seed } from './seed.js';
 import { id, now, str, AppError, projectInput, opportunityInput, analyze, csv } from './domain.js';
 import { capabilities, discover, draftReply, aiAnalyze, suggestKeywords } from './providers.js';
+import { researchWebsite } from './site-research.js';
 
 const STATIC = new Map([['/', ['index.html', 'text/html']], ['/app.js', ['app.js', 'text/javascript']], ['/styles.css', ['styles.css', 'text/css']], ['/favicon.svg', ['favicon.svg', 'image/svg+xml']]]);
 function equal(a, b) { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); }
 export function createApp({ store = new Store(), env = process.env, fetcher = fetch, demo = true } = {}) {
   if (demo) seed(store);
   const busy = new Set();
+  const siteBusy = new Set();
   const requireProject = pid => { const p = store.project(pid); if (!p) throw new AppError('Project not found.', 404); return p; };
   const requireItem = iid => { const i = store.item(iid); if (!i) throw new AppError('Opportunity not found.', 404); return i; };
   async function sync(pid, provider) {
@@ -80,11 +82,25 @@ export function createApp({ store = new Store(), env = process.env, fetcher = fe
           store.transaction(() => { store.saveProject(data); for (const i of store.items(pid)) store.saveItem({ ...i, analysis: analyze(i, data) }); });
           store.event(pid, 'Project settings updated. Rules-based scores recalculated.'); return send(data);
         }
-        if (!action && method === 'DELETE') { if (busy.has(pid)) throw new AppError('Wait for discovery to finish before deleting this project.', 409); store.deleteProject(pid); return send({ ok: true }); }
+        if (!action && method === 'DELETE') { if (busy.has(pid) || siteBusy.has(pid)) throw new AppError('Wait for active research to finish before deleting this project.', 409); store.deleteProject(pid); return send({ ok: true }); }
         if (action === 'opportunities' && method === 'GET') return send(store.items(pid));
         if (action === 'events' && method === 'GET') return send(store.events(pid));
         if (action === 'sync' && method === 'POST') return send(await sync(pid, (await body(req)).provider));
         if (action === 'keywords' && method === 'POST') { await body(req); return send(await suggestKeywords(p, env, fetcher)); }
+        if (action === 'research' && method === 'POST') {
+          await body(req);
+          if (p.sample) throw new AppError('Create your own project before researching a website.');
+          if (siteBusy.has(pid)) throw new AppError('Website research is already active for this project.', 409);
+          siteBusy.add(pid);
+          try {
+            const result = await researchWebsite(p.website);
+            store.event(pid, `Website research extracted ${result.pages.length} public pages.`);
+            return send(result);
+          } catch (error) {
+            store.event(pid, error instanceof AppError ? error.message : 'Website research failed.', 'error');
+            throw error;
+          } finally { siteBusy.delete(pid); }
+        }
         if (action === 'import' && method === 'POST') {
           if (p.sample) throw new AppError('Create a project to import real conversations.');
           const data = await body(req);

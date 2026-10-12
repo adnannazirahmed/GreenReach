@@ -23,7 +23,8 @@ The app binds to loopback by default and stores data in `data/greenreach.db`. No
 - Multiple projects, product context, audience, voice, keywords, competitors, and ignored subreddits.
 - Persistent opportunity inbox with search, sorting, intent filters, saved records, and workflow states.
 - **Reddit API** post search and **SerpAPI Google** organic-result discovery with your own authorized credentials.
-- Explainable rules-based scoring; optional **Ollama** analysis, keyword suggestions, and draft generation.
+- Bounded product-site research that checks `robots.txt`, reads up to four same-domain pages, blocks private network targets, and previews text before it changes project context.
+- Explainable rules-based scoring; optional **Ollama or OpenAI-compatible** analysis, keyword suggestions, and draft generation.
 - Brand and competitor matching, conversation sentiment, and observed Google positions.
 - Draft editor, local notes, copy, manual replied status, and a relationship pipeline.
 - Community, sentiment, and workflow analytics computed from actual stored records.
@@ -32,7 +33,7 @@ The app binds to loopback by default and stores data in `data/greenreach.db`. No
 - REST API and a **read-only stdio MCP server** with six tools.
 - Responsive dashboard, keyboard-accessible native dialogs, input validation, same-origin checks, local Host validation, and optional bearer access control.
 
-The demo is always visibly marked. Sample conversations and metrics are invented. Missing credentials never silently produce fake live leads. Without Ollama, scores are rules-based and generated text is labeled **Template**, not AI.
+The demo is always visibly marked. Sample conversations and metrics are invented. Missing credentials never silently produce fake live leads. Without an AI provider, scores are rules-based and generated text is labeled **Template**, not AI.
 
 ## Configure discovery and AI
 
@@ -50,12 +51,17 @@ Copy-Item .env.example .env
 | `SERPAPI_KEY` | Google organic results through your provider account |
 | `OLLAMA_URL` | Default `http://127.0.0.1:11434`; administrator-controlled endpoint |
 | `OLLAMA_MODEL` | Name of a model you have installed in Ollama; empty disables AI |
+| `OPENAI_API_KEY` | Optional OpenAI API key; keep it only in the server environment |
+| `OPENAI_MODEL` | Model available to your API account; OpenAI takes precedence when configured |
+| `OPENAI_BASE_URL` | Optional OpenAI-compatible API origin; defaults to `https://api.openai.com` |
 | `SYNC_INTERVAL_MINUTES` | `0` disables scheduling; enabled values have a 5-minute minimum |
 | `APP_TOKEN` | Shared workspace bearer token; required for a non-loopback bind |
 | `HOST`, `PORT` | Default `127.0.0.1`, `4310` |
 | `DATABASE_PATH` | Default `./data/greenreach.db` |
 
-For local AI, install [Ollama](https://ollama.com/), pull a suitable instruction model supported by your machine, and set `OLLAMA_MODEL` to its exact installed name. The app calls Ollama's structured JSON chat API. A provider configured in the environment is not necessarily reachable; failed calls show an error and never silently replace AI output with a template. No AI model is bundled. The license of a downloaded model is separate from this application's MIT license.
+For local AI, install [Ollama](https://ollama.com/), pull a suitable instruction model supported by your machine, and set `OLLAMA_MODEL` to its exact installed name. For cloud AI, create an API key with model access and set `OPENAI_API_KEY` and `OPENAI_MODEL`. The OpenAI adapter uses Chat Completions JSON mode and does not request stored completions. `OPENAI_BASE_URL` lets an administrator point to an OpenAI-compatible service. A provider configured in the environment is not necessarily reachable; failed calls show an error and never silently replace AI output with a template. Cloud providers may charge for each call. No AI model is bundled. A downloaded model's license is separate from this application's MIT license.
+
+Website research needs no API key. Enter a public HTTPS project website, open **Settings**, and select **Research website**. GreenReach checks its `robots.txt`, retrieves the homepage and at most three relevant links on the same host, then lets you review up to 20,000 characters before using up to 5,000 characters as project context. It is limited to port 443, does not follow redirects, and stops at 1 MB per page. If `robots.txt` is unavailable, only the homepage is read. It does not bypass bot protections or run a general-purpose crawl.
 
 Discovery searches **at most 10 terms per provider per run**, taking configured keywords first, then brand and competitors. Reddit returns at most 25 posts per query. The Google adapter requests 10 organic results per query and keeps valid Reddit thread URLs. It searches the natural keyword rather than `site:reddit.com`, which would distort the apparent ranking. Google locale is US/English. Search volume is **not invented**: it is null unless supplied in an import (demo volumes are fictional).
 
@@ -133,6 +139,6 @@ Tests cover validation, URL canonicalization, deduplication, transactional impor
 
 ## Current limits
 
-This version does not crawl product websites, ingest all Reddit comments, retrieve full thread trees, send email/Slack alerts, auto-post, send DMs, measure conversion attribution, perform keyword-volume lookup, or guarantee search/AI visibility. Background jobs are process-local, not a durable queue. Keyword/brand matching is literal; sentiment and scores need human review. AI uses the supplied post body and project context, not a verified full conversation. Settings changes recalculate rules-based scores. See the roadmap for deeper ingestion, evaluations, notification delivery, rank history, and multi-user access.
+This version does not crawl beyond four product-site pages per research request, ingest all Reddit comments, retrieve full thread trees, send email/Slack alerts, auto-post, send DMs, measure conversion attribution, perform keyword-volume lookup, or guarantee search/AI visibility. Website extraction uses bounded HTML text extraction, not adaptive selectors or browser rendering. Background jobs are process-local, not a durable queue. Keyword/brand matching is literal; sentiment and scores need human review. AI uses supplied post bodies and project context, not a verified full conversation. Settings changes recalculate rules-based scores. See the roadmap for deeper ingestion, evaluations, notification delivery, rank history, and multi-user access.
 
-GreenReach uses original code and design. It is not affiliated with Redreach, Reddit, or the compared vendors.
+GreenReach uses original code and design. Its bounded site research and structured extraction draw on ideas shown by [Scrapling](https://github.com/D4Vinci/Scrapling) and [ScraperAI](https://github.com/scraperai/scraperai); neither project's code is bundled or copied. Scrapling is BSD-3-Clause licensed; ScraperAI is GPL-3.0 licensed. GreenReach is not affiliated with Redreach, Reddit, or the compared vendors.

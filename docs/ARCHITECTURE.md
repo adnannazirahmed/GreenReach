@@ -8,11 +8,11 @@ Node 24 serves a static ES-module frontend and a JSON API using `node:http`. Nat
 
 ## Data flow
 
-1. A user defines product facts, audience, voice, keywords, competitors, and exclusions. Website URL is metadata, not fetched content.
+1. A user defines product facts, audience, voice, keywords, competitors, and exclusions. An explicit website research request can read the configured public HTTPS site and up to three relevant same-host links; extracted text remains a review step before it changes project context.
 2. A manual import or optional discovery run normalizes source records. Reddit OAuth queries posts; Google discovery filters natural keyword search results to Reddit permalinks. Locked, archived, and NSFW posts are skipped by the Reddit adapter.
 3. Canonical permalinks deduplicate within each project. A Google snippet and a Reddit post for the same permalink converge on the same record. User-authored draft, notes, state, and pipeline stage survive sync.
 4. Rules assign relevance factors, buying intent, overall sentiment, and literal brand matches. Ignored communities score zero and are excluded from working views.
-5. Optional explicit AI analysis blends a model relevance score with the rules score. Optional draft generation sends the supplied text and product context to Ollama; the user edits, copies, posts externally, and manually marks replied.
+5. Optional explicit AI analysis blends a model relevance score with the rules score. Optional draft generation sends the supplied text and product context to the configured OpenAI-compatible provider or Ollama; the user edits, copies, posts externally, and manually marks replied.
 6. Counts and charts derive from stored records. No metrics estimate reach or revenue. MCP only reads these records.
 
 ## Scoring
@@ -29,7 +29,7 @@ Rules sum five explicit components and cap at 100:
 
 The score is a prioritization heuristic, **not a probability**. Literal matching can misclassify common brand names and negation. Text-level sentiment is not brand-level sentiment. Rules do not understand sarcasm. Updates recalculate scores; time passing alone does not continuously rescore the database.
 
-AI analysis requests structured output with bounded relevance, a fixed intent enum, a fixed sentiment enum, and reasoning. The blended score is `round(0.4 × ruleScore + 0.6 × modelRelevance)`. Invalid output fails visibly and leaves the prior analysis intact. Prompts treat source material as untrusted and discourage fabricated experience or features. This reduces but does not eliminate model errors. Source content cannot invoke tools; generated output is rendered as text.
+AI analysis requests structured output with bounded relevance, a fixed intent enum, a fixed sentiment enum, and reasoning. The OpenAI-compatible adapter uses Chat Completions JSON mode and sets `store: false`; Ollama uses its JSON response mode. OpenAI is selected when both its key and model are configured; otherwise Ollama is selected when its model is configured. The blended score is `round(0.4 × ruleScore + 0.6 × modelRelevance)`. Invalid output fails visibly and leaves the prior analysis intact. Prompts treat source material as untrusted and discourage fabricated experience or features. This reduces but does not eliminate model errors. Source content cannot invoke tools; generated output is rendered as text.
 
 ## Discovery and scheduling
 
@@ -45,7 +45,7 @@ Local access is the default. A loopback server validates Host headers to resist 
 
 When binding outside loopback, `APP_TOKEN` is required. Tokens are compared with timing-safe equality and never returned in configuration responses. The frontend keeps an entered token in sessionStorage, cleared when that browser session ends; it is accessible to scripts in that origin, so do not serve unrelated scripts from this origin. The browser loads no third-party scripts, fonts, or analytics. All record text is HTML-escaped, CSP blocks inline scripts, and CSV export prefixes formula-leading strings.
 
-The shared token is not multi-user authentication. All authorized users can read and edit all projects. Put remote deployments behind HTTPS and an authenticated proxy. The app does not implement distributed locks, a global rate limiter, audit-grade records, or optimistic locking; a trusted single operator is the intended first-release deployment. A malicious or stalled upstream body can still consume resources up to timeout; do not expose the server to untrusted users.
+The shared token is not multi-user authentication. All authorized users can read and edit all projects. Put remote deployments behind HTTPS and an authenticated proxy. The app does not implement distributed locks, a global rate limiter, audit-grade records, or optimistic locking; a trusted single operator is the intended first-release deployment. Website research pins DNS resolution to public addresses, rejects redirects, and bounds pages, response sizes, and request time; it is not a general-purpose crawler and does not bypass bot protections.
 
 Ollama receives project facts, supplied thread text, and notes when drafting. Keep sensitive information out of content sent to a remote model server. Provider keys stay in the environment and `.env` is ignored. Google keys are carried in requests to its provider endpoint, as required by that API; requests and URLs are not logged by this app.
 

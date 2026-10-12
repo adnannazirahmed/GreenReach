@@ -13,6 +13,7 @@ Base URL: `http://127.0.0.1:4310/api`. Use `Content-Type: application/json` on w
 | POST | `/projects/:id/import` | `{ "items": [...] }`, 1–200 validated source records |
 | POST | `/projects/:id/sync` | `{ "provider": "reddit" }` or `{ "provider": "google" }` |
 | POST | `/projects/:id/keywords` | `{}`; suggest keywords without applying them |
+| POST | `/projects/:id/research` | `{}`; bounded research of the configured public website, returning page links and reviewable extracted text |
 | GET | `/projects/:id/export` | JSON project, items, activity and export timestamp |
 | GET | `/projects/:id/export?format=csv` | Conversation CSV with spreadsheet formula protection |
 | GET / PATCH / DELETE | `/opportunities/:id` | Read, edit workflow fields, or remove a record |
@@ -20,6 +21,10 @@ Base URL: `http://127.0.0.1:4310/api`. Use `Content-Type: application/json` on w
 | POST | `/opportunities/:id/analyze` | `{}`; AI analysis when configured, otherwise recalculate rules |
 
 Create a project with `name`, HTTPS `website`, and optional `description`, `audience`, `voice`, `keywords` (string array), `competitors` (string array), `ignoredSubreddits` (string array), `monitoring` (boolean). Project PATCH accepts those same fields. Name is required, at most 80 characters. Description is at most 5000. Up to 20 keywords and 10 competitors are supported. Settings edits recalculate rules-based classifications.
+
+AI analysis, keyword suggestions, and drafts use OpenAI when both `OPENAI_API_KEY` and `OPENAI_MODEL` are configured; otherwise they use Ollama when `OLLAMA_MODEL` is configured. If neither provider is configured, analysis is rules-based and drafts are labeled templates. `OPENAI_BASE_URL` is an optional administrator-controlled OpenAI-compatible API origin.
+
+Website research uses the project's configured HTTPS website; the request body cannot select a URL. It checks `robots.txt`, resolves and pins public DNS addresses, reads at most four HTML pages on that same hostname, and returns at most 20,000 characters. Redirects are rejected, each response is limited to 1 MB and 12 seconds, and a missing or unavailable robots file limits research to the homepage. Review text before adding it to product context. This endpoint does not use AI or require a scraping service API key.
 
 Opportunity PATCH accepts `draft`, `notes` (each at most 15000 characters), `saved` (boolean), `status` (`new`, `reviewing`, `replied`, `dismissed`), and `contactStage` (`none`, `interested`, `contacted`, `responded`, `converted`). IDs, ownership, provider attribution, and URLs cannot be modified by PATCH. There is no external posting endpoint.
 
