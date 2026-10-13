@@ -128,30 +128,92 @@ function decode(text) {
     .replace(/&#x([0-9a-f]+);/gi, (_, n) => codePoint(n, 16));
 }
 
-function pageText(html) {
-  const title = decode((html.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i)?.[1] || '').replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
-  const description = decode(html.match(/<meta\b[^>]*name=["']description["'][^>]*content=["']([^"']*)["'][^>]*>/i)?.[1] || '').trim();
-  const main = html.match(/<(?:main|article)\b[^>]*>([\s\S]*?)<\/(?:main|article)\s*>/i)?.[1] || html;
-  const text = decode(main.replace(/<!--[\s\S]*?-->/g, ' ').replace(/<(script|style|noscript|svg|nav|footer|header)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ')
-    .replace(/<\s*br\b[^>]*>|<\/(?:p|div|li|h[1-6]|section|article)\s*>/gi, '\n').replace(/<[^>]+>/g, ' '))
-    .replace(/[\t\r ]+/g, ' ').replace(/\n\s+/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
-  return { title, description, text: text.slice(0, 6000) };
+function attributes(tag) {
+  const result = {};
+  const source = tag.replace(/^<\s*[\w:-]+/, '').replace(/\/?\s*>$/, '');
+  for (const match of source.matchAll(/([^\s=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g)) {
+    const key = match[1].toLowerCase();
+    if (key !== '/') result[key] = decode(match[2] ?? match[3] ?? match[4] ?? '');
+  }
+  return result;
+}
+
+function structuredData(html) {
+  const objects = [];
+  for (const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)) {
+    if (!/application\/ld\+json/i.test(attributes(`<script ${match[1]}>`).type || '')) continue;
+    try {
+      const value = JSON.parse(match[2].trim());
+      const collect = item => {
+        if (Array.isArray(item)) item.forEach(collect);
+        else if (item && typeof item === 'object') { objects.push(item); if (item['@graph']) collect(item['@graph']); }
+      };
+      collect(value);
+    } catch { /* Malformed or hostile structured data is ignored as page content. */ }
+  }
+  return objects;
+}
+
+function pageText(html, url) {
+  const metas = [...html.matchAll(/<meta\b[^>]*>/gi)].map(match => attributes(match[0]));
+  const meta = (...keys) => {
+    for (const key of keys) {
+      const found = metas.find(tag => (tag.name || tag.property || tag.itemprop || '').toLowerCase() === key);
+      if (found?.content) return found.content.trim();
+    }
+    return '';
+  };
+  const data = structuredData(html);
+  const typeOf = item => (Array.isArray(item?.['@type']) ? item['@type'] : [item?.['@type']]).filter(Boolean).map(type => String(type).split('/').pop().toLowerCase());
+  const discussionTypes = new Set(['discussionforumposting', 'qapage', 'question', 'answer']);
+  const articleTypes = new Set(['article', 'blogposting', 'newsarticle', 'report', 'review']);
+  const itemList = data.some(item => typeOf(item).includes('itemlist'));
+  const threadData = data.find(item => typeOf(item).some(type => discussionTypes.has(type)));
+  const articleData = data.find(item => typeOf(item).some(type => articleTypes.has(type)));
+  const title = decode((html.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i)?.[1] || '').replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim() || meta('og:title', 'twitter:title');
+  const description = meta('description', 'og:description', 'twitter:description');
+  const main = html.match(/<main\b[^>]*>([\s\S]*?)<\/main\s*>/i)?.[1] || html.match(/<article\b[^>]*>([\s\S]*?)<\/article\s*>/i)?.[1] || html;
+  const text = decode(main.replace(/<!--[\s\S]*?-->/g, ' ').replace(/<(script|style|noscript|svg|nav|footer|header|aside|form|button)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ')
+    .replace(/<\s*br\b[^>]*>|<\/(?:p|div|li|pre|blockquote|h[1-6]|section|article|tr|td|th|table)\s*>/gi, '\n').replace(/<[^>]+>/g, ' '))
+    .replace(/[\t\r ]+/g, ' ').replace(/\n\s+/g, '\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 6000);
+  const authorValue = articleData?.author || threadData?.author || meta('author', 'article:author');
+  const authorCandidate = typeof authorValue === 'string' ? authorValue : Array.isArray(authorValue) ? authorValue[0]?.name : authorValue?.name;
+  const author = typeof authorCandidate === 'string' ? authorCandidate.trim().slice(0, 80) : '';
+  const rawDate = articleData?.datePublished || threadData?.datePublished || meta('article:published_time', 'datepublished', 'date');
+  const parsedDate = rawDate && Date.parse(rawDate);
+  const publishedAt = Number.isFinite(parsedDate) && parsedDate <= Date.now() + 86400000 ? new Date(parsedDate).toISOString() : null;
+  const articleCount = (html.match(/<article\b/gi) || []).length;
+  const path = url?.pathname.toLowerCase() || '';
+  const pageType = threadData || /\/(?:thread|discussion|questions?|comments?)\//.test(path) ? 'discussion' :
+    itemList || articleCount > 2 || /\/(?:search|category|tag)\//.test(path) ? 'listing' :
+      articleData || articleCount > 0 ? 'article' : 'other';
+  const canonical = html.match(/<link\b[^>]*>/gi)?.map(attributes).find(tag => /canonical/i.test(tag.rel || ''))?.href || '';
+  const extractionQuality = Math.min(100, (title ? 15 : 0) + Math.min(45, Math.floor(text.length / 100)) + (description ? 10 : 0) + (/<(?:main|article)\b/i.test(html) ? 15 : 0) + (author ? 5 : 0) + (publishedAt ? 5 : 0) + (canonical ? 5 : 0));
+  return { title, description, text, author: author || '', publishedAt, pageType, extractionQuality };
 }
 
 function robotsRules(text) {
-  const rules = []; let applies = false;
+  const groups = []; let agents = [], rules = [];
+  const saveGroup = () => { if (agents.length) groups.push({ agents, rules }); agents = []; rules = []; };
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.split('#')[0].trim(); if (!line.includes(':')) continue;
     const [key, ...valueParts] = line.split(':'); const value = valueParts.join(':').trim();
-    if (key.trim().toLowerCase() === 'user-agent') applies = value === '*' || value.toLowerCase() === 'greenreach';
-    else if (applies && value && ['allow', 'disallow'].includes(key.trim().toLowerCase())) rules.push({ allow: key.trim().toLowerCase() === 'allow', value });
+    if (key.trim().toLowerCase() === 'user-agent') {
+      if (rules.length) saveGroup();
+      agents.push(value.toLowerCase());
+    } else if (value && ['allow', 'disallow'].includes(key.trim().toLowerCase())) {
+      rules.push({ allow: key.trim().toLowerCase() === 'allow', value });
+    }
   }
+  saveGroup();
+  const named = groups.filter(group => group.agents.some(agent => agent === 'greenreach'));
+  const applicable = (named.length ? named : groups.filter(group => group.agents.includes('*'))).flatMap(group => group.rules);
   return path => {
-    const matched = rules.filter(rule => {
+    const matched = applicable.filter(rule => {
       const terminal = rule.value.endsWith('$'), source = terminal ? rule.value.slice(0, -1) : rule.value;
       const pattern = source.split('*').map(part => part.replace(/[|\\{}()[\]^$+?.]/g, '\\$&')).join('.*');
       return new RegExp(`^${pattern}${terminal ? '$' : ''}`).test(path);
-    }).sort((a, b) => b.value.length - a.value.length)[0];
+    }).sort((a, b) => b.value.length - a.value.length || Number(b.allow) - Number(a.allow))[0];
     return Boolean(matched && !matched.allow);
   };
 }
@@ -193,14 +255,62 @@ export async function researchWebsite(website, { lookup = dns.lookup, requestImp
   const root = new URL(base.pathname || '/', origin);
   if (blocked(root.pathname)) throw new AppError('robots.txt disallows the configured website path.', 403);
   const rootHtml = await getPage(root);
-  const pages = [{ url: root.href, ...pageText(rootHtml) }];
+  const pages = [{ url: root.href, ...pageText(rootHtml, root) }];
   const links = crawlChildren ? candidateLinks(rootHtml, root).filter(link => !blocked(link.pathname)) : [];
   for (const link of links) {
     if (pages.length >= MAX_PAGES) break;
-    try { pages.push({ url: link.href, ...pageText(await getPage(link)) }); }
+    try { pages.push({ url: link.href, ...pageText(await getPage(link), link) }); }
     catch (error) { if (error instanceof AppError && (error.status === 400 || error.status === 504)) throw error; }
   }
   const context = pages.map(page => [page.title, page.description, page.text].filter(Boolean).join('\n')).join('\n\n').slice(0, 20000);
   if (!context) throw new AppError('No readable text was found on the website.', 502);
   return { pages: pages.map(({ url, title }) => ({ url, title })), context, chars: context.length };
+}
+
+// Crawl only URLs returned by search for operator-approved exact hostnames.
+// Search discovery is separate so the crawler never follows arbitrary links.
+export async function researchUrls(urls, approvedDomains, { lookup = dns.lookup, requestImpl = https.request, totalTimeoutMs = CRAWL_TIMEOUT_MS } = {}) {
+  const hosts = new Set(approvedDomains.filter(host => host !== 'teamblind.com' && !host.endsWith('.teamblind.com')));
+  const normalized = urls.map(value => {
+    try {
+      const url = new URL(value);
+      if (url.protocol !== 'https:' || url.port || url.username || url.password || !hosts.has(url.hostname.toLowerCase())) return null;
+      url.search = ''; url.hash = '';
+      return url;
+    } catch { return null; }
+  }).filter(Boolean);
+  const candidates = [...new Map(normalized.map(url => [url.href, url])).values()].slice(0, 8);
+  if (!candidates.length) return { pages: [], chars: 0 };
+  const deadline = Date.now() + totalTimeoutMs;
+  const recordsByHost = new Map(), robotsByHost = new Map();
+  const getRecords = async host => {
+    if (!recordsByHost.has(host)) recordsByHost.set(host, await withinDeadline(publicLookup(host, lookup), deadline));
+    return recordsByHost.get(host);
+  };
+  const getPage = async (url, expectedType = 'text/html') => {
+    const records = await getRecords(url.hostname);
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new AppError(RESEARCH_TIMEOUT, 504);
+    return withinDeadline(requestPage(url, records, expectedType, requestImpl, Math.min(TIMEOUT_MS, remaining)), deadline);
+  };
+  const pages = [];
+  for (const url of candidates) {
+    try {
+      const host = url.hostname.toLowerCase();
+      let blocked = robotsByHost.get(host);
+      if (!blocked) {
+        const robots = await getPage(new URL('/robots.txt', url), 'text/plain');
+        blocked = robotsRules(robots);
+        robotsByHost.set(host, blocked);
+      }
+      if (blocked(url.pathname)) continue;
+      const html = await getPage(url);
+      const extracted = pageText(html, url);
+      if (extracted.title || extracted.description || extracted.text) pages.push({ url: url.href, ...extracted });
+    } catch (error) {
+      if (error instanceof AppError && (error.status === 400 || error.status === 504)) throw error;
+      // A missing robots.txt or unreadable individual page means skip that result.
+    }
+  }
+  return { pages: pages.map(page => ({ ...page, text: page.text.slice(0, 6000) })), chars: pages.reduce((sum, page) => sum + page.text.length, 0) };
 }

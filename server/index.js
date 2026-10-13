@@ -34,7 +34,7 @@ export function createApp({ store = new Store(), env = process.env, fetcher = fe
           if (item.analysis.ignored) continue;
           const prior = existing.get(item.url);
           if (prior) {
-            const merged = { ...prior, ...(provider === 'reddit' ? { body: item.body, comments: item.comments, upvotes: item.upvotes, publishedAt: item.publishedAt } : { googlePosition: item.googlePosition, keyword: item.keyword }), lastSeenAt: now() };
+          const merged = { ...prior, title: item.title, body: item.body, source: item.source, community: item.community, author: item.author, authorUrl: item.authorUrl, comments: item.comments, upvotes: item.upvotes, publishedAt: item.publishedAt, pageType: item.pageType, extractionQuality: item.extractionQuality, ...(item.googlePosition ? { googlePosition: item.googlePosition } : {}), keyword: item.keyword, lastSeenAt: now() };
             merged.analysis = analyze(merged, p); store.saveItem(merged); existing.set(item.url, merged); updated++;
           } else { store.insert(item); existing.set(item.url, item); inserted++; }
         }
@@ -42,7 +42,8 @@ export function createApp({ store = new Store(), env = process.env, fetcher = fe
         const latest = store.project(pid);
         if (!latest) throw new AppError('Project was deleted during discovery.', 409);
         store.saveProject({ ...latest, lastSyncAt: now() });
-        store.event(pid, `${provider === 'google' ? 'Google' : 'Reddit'} discovery: ${inserted} new, ${updated} refreshed, ${result.queries} queries.`, 'sync');
+        const sourceName = ({ reddit: 'Reddit', google: 'Google', web: 'Web sweep', hackernews: 'Hacker News', stackexchange: 'Stack Exchange', github: 'GitHub', devto: 'DEV Community' })[provider] || provider;
+        store.event(pid, `${sourceName} discovery: ${inserted} new, ${updated} refreshed, ${result.queries} queries.`, 'sync');
       });
       return { inserted, updated, queries: result.queries };
     } catch (e) { store.event(pid, e instanceof AppError ? e.message : 'Discovery failed. Check provider connectivity.', 'error'); throw e; }
@@ -75,7 +76,7 @@ export function createApp({ store = new Store(), env = process.env, fetcher = fe
       if (url.pathname === '/api/config' && method === 'GET') return send({ ...capabilities(providerEnv()), credentialStatus: credentialVault.status(env), savedCredentialStatus: credentialVault.savedStatus(), busy: [...busy] });
       if (url.pathname === '/api/config/credentials' && method === 'PATCH') {
         const data = await body(req), values = data.credentials ?? {}, clear = data.clear ?? [];
-        const limits = { REDDIT_ACCESS_TOKEN: 4096, REDDIT_CLIENT_ID: 512, REDDIT_CLIENT_SECRET: 512, REDDIT_USER_AGENT: 256, SERPAPI_KEY: 512, OPENAI_API_KEY: 512, OPENAI_MODEL: 120, OPENAI_BASE_URL: 500 };
+        const limits = { REDDIT_ACCESS_TOKEN: 4096, REDDIT_CLIENT_ID: 512, REDDIT_CLIENT_SECRET: 512, REDDIT_USER_AGENT: 256, SERPAPI_KEY: 512, GITHUB_TOKEN: 512, OPENAI_API_KEY: 512, OPENAI_MODEL: 120, OPENAI_BASE_URL: 500 };
         if (!values || typeof values !== 'object' || Array.isArray(values) || Object.keys(values).some(key => !Object.hasOwn(limits, key))) throw new AppError('Use supported provider credential fields only.');
         if (!Array.isArray(clear) || clear.length > Object.keys(limits).length || !clear.every(key => typeof key === 'string' && Object.hasOwn(limits, key))) throw new AppError('Choose valid saved credentials to clear.');
         const pending = [];
