@@ -19,9 +19,46 @@ function publicAddress(address) {
       (a === 203 && b === 0));
   }
   if (!net.isIPv6(address)) return false;
+  const value = ipv6Value(address);
+  if (value === null) return false;
+  const inPrefix = (prefix, bits) => {
+    const prefixValue = ipv6Value(prefix);
+    return (value >> BigInt(128 - bits)) === (prefixValue >> BigInt(128 - bits));
+  };
+  // Only global unicast is accepted. Keep the IANA special-purpose ranges that
+  // are not globally reachable out, including expanded/non-canonical spellings.
+  if (!inPrefix('2000::', 3)) return false;
+  const globallyReachableExceptions = [
+    ['2001:1::1', 128], ['2001:1::2', 128], ['2001:1::3', 128],
+    ['2001:3::', 32], ['2001:4:112::', 48], ['2001:20::', 28], ['2001:30::', 28],
+  ];
+  if (inPrefix('2001::', 23) && !globallyReachableExceptions.some(([prefix, bits]) => inPrefix(prefix, bits))) return false;
+  return !inPrefix('2001:db8::', 32) && !inPrefix('2002::', 16) && !inPrefix('3fff::', 20);
+}
+
+function ipv6Value(address) {
   const value = address.toLowerCase().split('%')[0];
-  // Only globally routed IPv6 unicast is accepted; reject mapped IPv4 and special ranges.
-  return (value.startsWith('2') || value.startsWith('3')) && !/^(?:2001:(?:0|2|10|db8):|2002:|3fff:)/.test(value);
+  const halves = value.split('::');
+  if (halves.length > 2) return null;
+  const parseHalf = half => {
+    const groups = half ? half.split(':') : [];
+    const dotted = groups.findIndex(group => group.includes('.'));
+    if (dotted !== -1) {
+      const octets = groups[dotted].split('.').map(Number);
+      if (octets.length !== 4 || octets.some(octet => !Number.isInteger(octet) || octet < 0 || octet > 255)) return null;
+      groups.splice(dotted, 1, ((octets[0] << 8) | octets[1]).toString(16), ((octets[2] << 8) | octets[3]).toString(16));
+    }
+    return groups;
+  };
+  const left = parseHalf(halves[0]);
+  const right = parseHalf(halves[1] || '');
+  if (!left || !right) return null;
+  const groups = [...left, ...right];
+  const missing = 8 - groups.length;
+  if ((halves.length === 1 && missing !== 0) || (halves.length === 2 && missing < 1)) return null;
+  const expanded = halves.length === 2 ? [...left, ...Array(missing).fill('0'), ...right] : groups;
+  if (expanded.length !== 8 || expanded.some(group => !/^[0-9a-f]{1,4}$/.test(group))) return null;
+  return expanded.reduce((result, group) => (result << 16n) | BigInt(`0x${group}`), 0n);
 }
 
 async function publicLookup(hostname, lookup = dns.lookup) {

@@ -60,6 +60,30 @@ test('research blocks DNS answers containing any private address before making r
   assert.deepEqual(requests, []);
 });
 
+test('research rejects expanded reserved IPv6 answers and accepts globally reachable IPv6 exceptions', async () => {
+  const blocked = fakeHttps({ responseFor: () => ({ body: '' }) });
+  for (const address of [
+    '2001:0000:0000:0000:0000:0000:0000:0001', // expanded Teredo
+    '2001:0002:0000:0000:0000:0000:0000:0001', // benchmarking range
+    '2001:0001:0000:0000:0000:0000:0000:0004', // unassigned IETF range
+  ]) {
+    await assert.rejects(researchWebsite('https://example.com', {
+      lookup: async () => [{ address, family: 6 }], requestImpl: blocked.requestImpl,
+    }), error => error.status === 400 && /private or reserved/.test(error.message));
+  }
+  assert.deepEqual(blocked.requests, []);
+
+  for (const address of ['2001:1::1', '2001:1::2', '2001:1::3', '2001:3::1', '2001:4:112::1', '2001:20::1', '2001:30::1', '2606:4700:4700::1111']) {
+    const publicV6 = fakeHttps({ responseFor: url => url.pathname === '/robots.txt'
+      ? { body: 'User-agent: *\nAllow: /' } : { body: '<main>Public IPv6 site.</main>' } });
+    const result = await researchWebsite('https://example.com', {
+      lookup: async () => [{ address, family: 6 }], requestImpl: publicV6.requestImpl,
+    });
+    assert.match(result.context, /Public IPv6 site/);
+    assert.ok(publicV6.pinnedAddresses.every(pinned => pinned === address));
+  }
+});
+
 test('research puts a total deadline on DNS resolution', async () => {
   await assert.rejects(researchWebsite('https://example.com', { lookup: () => new Promise(() => {}), totalTimeoutMs: 20 }),
     error => error.status === 504 && /total time limit/.test(error.message));
