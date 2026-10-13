@@ -32,10 +32,11 @@ export function webUrl(value, redditOnly = false) {
 }
 export function projectInput(data, previous = {}) {
   if ('monitoring' in data && typeof data.monitoring !== 'boolean') throw new AppError('monitoring must be boolean.');
+  const website = data.website ?? previous.website ?? '';
   return {
     ...previous,
     name: str(data.name ?? previous.name, 'Name', 80, true),
-    website: webUrl(data.website ?? previous.website),
+    website: typeof website === 'string' && !website.trim() ? '' : webUrl(website),
     description: str(data.description ?? previous.description ?? '', 'Description', 5000),
     audience: str(data.audience ?? previous.audience ?? '', 'Audience', 1000),
     voice: str(data.voice ?? previous.voice ?? 'Helpful, direct, and transparent about affiliation.', 'Voice', 1000),
