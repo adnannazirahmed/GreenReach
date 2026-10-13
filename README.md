@@ -94,16 +94,6 @@ Use **Add conversation**, or import a JSON array:
 
 Replace the example with a real permalink. Imports allow 1–200 records and a 2 MB request maximum. Titles and Reddit permalinks are required. URL variants deduplicate within each project. Importing a JSON export re-imports source conversations; it intentionally does **not** restore IDs, workflow state, private notes, or drafts. Back up the database for full-fidelity restore.
 
-## Docker
-
-Copy `.env.example` to `.env`, set a long random `APP_TOKEN`, then:
-
-```sh
-docker compose up --build -d
-```
-
-The port is published on the host's loopback interface only. Enter `APP_TOKEN` in the browser when prompted. With Docker Desktop, point `OLLAMA_URL` to `http://host.docker.internal:11434` if Ollama runs on the host and is configured to accept that connection. A Linux host may require additional host networking configuration.
-
 This is a single trusted workspace. All holders of the shared token can access all projects. For internet hosting, add HTTPS and an authenticated reverse proxy; account isolation, team roles, and enterprise tenancy are not implemented. Do not publish an unauthenticated local server.
 
 ## Connect an AI assistant through MCP
@@ -139,7 +129,7 @@ npm run check
 npm test
 ```
 
-Tests cover validation, URL canonicalization, deduplication, transactional imports, SQLite persistence, AI output validation, provider failure handling, draft/pipeline workflows, CSV injection protection, access controls, and read-only MCP. Provider tests use fixtures: live Reddit/SerpAPI/OpenAI calls need your credentials; Ollama calls need your local model runtime. Docker packaging is supplied but requires a local Docker installation to verify.
+Tests cover validation, URL canonicalization, deduplication, transactional imports, SQLite persistence, AI output validation, provider failure handling, draft/pipeline workflows, CSV injection protection, access controls, and read-only MCP. Provider tests use fixtures: live Reddit/SerpAPI/OpenAI calls need your credentials; Ollama calls need your local model runtime.
 
 ## Current limits
 

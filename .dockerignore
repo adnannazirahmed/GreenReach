@@ -1,7 +1,0 @@
-data
-.env
-.git
-node_modules
-artifacts
-tests
-docs
