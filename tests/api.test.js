@@ -69,5 +69,10 @@ test('MCP handshake, discovery, read-only tools, authentication and validation',
   const result=await call('tools/call',{name:'list_opportunities',arguments:{projectId:pid}});assert.equal(JSON.parse(result.result.content[0].text).length,1);
   assert.equal((await call('tools/call',{name:'list_opportunities',arguments:{projectId:pid,limit:-1}})).error.code,-32602);
   assert.equal((await call('tools/call',{name:'post_reply',arguments:{}})).error.code,-32602);
+  let forwardedAuthorization;
+  const authenticated=await handleMcp({jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'list_projects',arguments:{}}},{GREENREACH_URL:base,APP_TOKEN:'mcp-test-token'},async(url,options)=>{forwardedAuthorization=options.headers.Authorization;return fetch(url,options);});
+  assert.equal(forwardedAuthorization,'Bearer mcp-test-token');assert.equal(authenticated.result.isError,false);
+  const unauthorized=await handleMcp({jsonrpc:'2.0',id:3,method:'tools/call',params:{name:'list_projects',arguments:{}}},{GREENREACH_URL:base,APP_TOKEN:'wrong-token'},async()=>new Response('Unauthorized',{status:401}));
+  assert.equal(unauthorized.result.isError,true);assert.match(unauthorized.result.content[0].text,/HTTP 401/);
   assert.equal(await handleMcp({jsonrpc:'2.0',method:'notifications/initialized'}),null);
 });

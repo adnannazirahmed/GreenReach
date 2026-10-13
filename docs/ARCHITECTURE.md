@@ -2,7 +2,7 @@
 
 ## Runtime
 
-Node 24 serves a static ES-module frontend and a JSON API using `node:http`. Native `node:sqlite` stores projects and opportunities as validated JSON documents, with indexed project IDs, unique per-project canonical URLs, and an append-only activity table. There is no package installation or asset build step. SQLite runs in WAL mode with a busy timeout.
+Node 24 serves a static ES-module frontend and a JSON API using `node:http`. Native `node:sqlite` stores projects and opportunities as validated JSON documents, with indexed project IDs, unique per-project canonical URLs, and activity history capped at 500 events per project. There is no package installation or asset build step. SQLite runs in WAL mode with a busy timeout.
 
 `server/domain.js` contains validation, canonicalization, scoring, and exports. `store.js` owns SQL and transactions. `providers.js` contains external network and AI boundaries. `index.js` contains routing and scheduling. `mcp.js` bridges read-only JSON-RPC tools to the authenticated API. `seed.js` creates a fictional demo only when the database has no projects at startup. `public/app.js` renders the dashboard and sends state changes through the API.
 
@@ -45,7 +45,7 @@ Local access is the default. A loopback server validates Host headers to resist 
 
 When binding outside loopback, `APP_TOKEN` is required. Tokens are compared with timing-safe equality and never returned in configuration responses. The frontend keeps an entered token in sessionStorage, cleared when that browser session ends; it is accessible to scripts in that origin, so do not serve unrelated scripts from this origin. The browser loads no third-party scripts, fonts, or analytics. All record text is HTML-escaped, CSP blocks inline scripts, and CSV export prefixes formula-leading strings.
 
-The shared token is not multi-user authentication. All authorized users can read and edit all projects. Put remote deployments behind HTTPS and an authenticated proxy. The app does not implement distributed locks, a global rate limiter, audit-grade records, or optimistic locking; a trusted single operator is the intended first-release deployment. Website research pins DNS resolution to public addresses, rejects redirects, and bounds pages, response sizes, and request time; it is not a general-purpose crawler and does not bypass bot protections.
+The shared token is not multi-user authentication. All authorized users can read and edit all projects. Put remote deployments behind HTTPS and an authenticated proxy. The app does not implement distributed locks, a global rate limiter, audit-grade records, or optimistic locking; a trusted single operator is the intended first-release deployment. Website research pins DNS resolution to public addresses, rejects redirects, limits each request to 12 seconds and each full research run to 60 seconds, and bounds pages and response sizes; it is not a general-purpose crawler and does not bypass bot protections.
 
 Ollama receives project facts, supplied thread text, and notes when drafting. Keep sensitive information out of content sent to a remote model server. Provider keys can come from the environment or the Settings credential form. Form values are AES-256-GCM encrypted in SQLite with a random local key file beside the database (or an operator-supplied `CREDENTIALS_ENCRYPTION_KEY`); status APIs return booleans only. `.env` is ignored. Google keys are carried in requests to its provider endpoint, as required by that API; requests and URLs are not logged by this app.
 

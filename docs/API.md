@@ -10,7 +10,7 @@ Base URL: `http://127.0.0.1:4310/api`. Use `Content-Type: application/json` on w
 | GET / POST | `/projects` | List projects / create project |
 | GET / PATCH / DELETE | `/projects/:id` | Read, edit, or permanently delete project and related data |
 | GET | `/projects/:id/opportunities` | Stored records |
-| GET | `/projects/:id/events` | Most recent 60 activity events |
+| GET | `/projects/:id/events` | Most recent 60 activity events; storage retains up to 500 per project |
 | POST | `/projects/:id/import` | `{ "items": [...] }`, 1–200 validated source records |
 | POST | `/projects/:id/sync` | `{ "provider": "reddit" }` or `{ "provider": "google" }` |
 | POST | `/projects/:id/keywords` | `{}`; suggest keywords without applying them |
@@ -27,7 +27,7 @@ AI analysis, keyword suggestions, and drafts use OpenAI when both `OPENAI_API_KE
 
 The Settings screen can store Reddit, SerpAPI, and OpenAI values in the SQLite credential table, encrypted with AES-256-GCM. `/api/config` returns provider capability and credential-presence booleans only; it never returns values. Blank fields keep current values. A `clear` entry removes only the saved database value, so an environment value can still supply that credential. GreenReach generates `greenreach.credentials.key` beside the database on first run unless `CREDENTIALS_ENCRYPTION_KEY` supplies a base64-encoded 32-byte key. Keep the key with backups of the database; losing it makes saved credentials unrecoverable.
 
-Website research uses the project's configured HTTPS website; the request body cannot select a URL. It checks `robots.txt`, resolves and pins public DNS addresses, reads at most four HTML pages on that same hostname, and returns at most 20,000 characters. Redirects are rejected, each response is limited to 1 MB and 12 seconds, and a missing or unavailable robots file limits research to the homepage. Review text before adding it to product context. This endpoint does not use AI or require a scraping service API key.
+Website research uses the project's configured HTTPS website; the request body cannot select a URL. It checks `robots.txt`, resolves and pins public DNS addresses, reads at most four HTML pages on that same hostname, and returns at most 20,000 characters. Redirects are rejected, each response is limited to 1 MB and 12 seconds, and the full lookup and crawl has a 60-second deadline. A missing or unavailable robots file limits research to the homepage. Review text before adding it to product context. This endpoint does not use AI or require a scraping service API key.
 
 Opportunity PATCH accepts `draft`, `notes` (each at most 15000 characters), `saved` (boolean), `status` (`new`, `reviewing`, `replied`, `dismissed`), and `contactStage` (`none`, `interested`, `contacted`, `responded`, `converted`). IDs, ownership, provider attribution, and URLs cannot be modified by PATCH. There is no external posting endpoint.
 

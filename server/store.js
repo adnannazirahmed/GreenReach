@@ -2,6 +2,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
+const MAX_EVENTS_PER_PROJECT = 500;
+
 export class Store {
   constructor(path = process.env.DATABASE_PATH || './data/greenreach.db') {
     this.path = path;
@@ -26,7 +28,14 @@ export class Store {
   transaction(fn) { this.db.exec('BEGIN'); try { const value = fn(); this.db.exec('COMMIT'); return value; } catch (e) { this.db.exec('ROLLBACK'); throw e; } }
   deleteProject(pid) { this.transaction(() => { this.db.prepare('DELETE FROM opportunities WHERE project_id=?').run(pid); this.db.prepare('DELETE FROM events WHERE project_id=?').run(pid); this.db.prepare('DELETE FROM projects WHERE id=?').run(pid); }); }
   deleteItem(id) { this.db.prepare('DELETE FROM opportunities WHERE id=?').run(id); }
-  event(pid, text, kind = 'activity') { const e = { text, kind, at: new Date().toISOString() }; this.db.prepare('INSERT INTO events(project_id,data) VALUES (?,?)').run(pid, JSON.stringify(e)); return e; }
+  event(pid, text, kind = 'activity') {
+    const e = { text, kind, at: new Date().toISOString() };
+    this.db.prepare('INSERT INTO events(project_id,data) VALUES (?,?)').run(pid, JSON.stringify(e));
+    this.db.prepare(`DELETE FROM events WHERE project_id=? AND id NOT IN
+      (SELECT id FROM events WHERE project_id=? ORDER BY id DESC LIMIT ?)`)
+      .run(pid, pid, MAX_EVENTS_PER_PROJECT);
+    return e;
+  }
   events(pid) { return this.db.prepare('SELECT data FROM events WHERE project_id=? ORDER BY id DESC LIMIT 60').all(pid).map(r => JSON.parse(r.data)); }
   credentials() { return this.db.prepare('SELECT name, value FROM credentials').all(); }
   setCredential(name, value) { this.db.prepare('INSERT INTO credentials(name,value) VALUES (?,?) ON CONFLICT(name) DO UPDATE SET value=excluded.value').run(name, value); }
