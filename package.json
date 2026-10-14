@@ -9,8 +9,12 @@
     "start": "node --env-file-if-exists=.env server/index.js",
     "dev": "node --env-file-if-exists=.env --watch server/index.js",
     "test": "node --test tests/*.test.js",
+    "test:e2e": "playwright test --config=tests/e2e/playwright.config.js",
     "check": "node --check server/index.js && node --check server/providers.js && node --check server/site-research.js && node --check server/credential-vault.js && node --check server/store.js && node --check public/app.js",
     "mcp": "node --env-file-if-exists=.env server/mcp.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.0"
   },
   "license": "MIT"
 }

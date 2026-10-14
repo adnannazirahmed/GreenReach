@@ -132,9 +132,13 @@ On Windows use a path such as `C:/Users/you/Green-Reach/server/mcp.js`. If authe
 ```sh
 npm run check
 npm test
+npx playwright install chromium
+npm run test:e2e
 ```
 
 Tests cover validation, URL canonicalization, deduplication, transactional imports, SQLite persistence, AI output validation, provider failure handling, draft/pipeline workflows, CSV injection protection, access controls, and read-only MCP. Provider tests use fixtures: live Reddit/SerpAPI/OpenAI calls need your credentials; Ollama calls need your local model runtime.
+
+Playwright browser tests cover fictional demo labeling, project and conversation workflows, saved/search filters, and CSV/JSON downloads. They use a temporary database and do not call external providers.
 
 ## Current limits
 
