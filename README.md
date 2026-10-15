@@ -76,6 +76,10 @@ Discovery searches **at most 10 terms per source per run**, taking configured ke
 
 Google and Reddit adapters require credentials and may incur charges. GitHub works anonymously within stricter rate limits; a personal access token is optional. Hacker News search uses the Algolia HN Search API; Stack Exchange uses its public API; DEV uses the public Forem API. Each source may change its access rules, rate limits, and reuse terms. Reddit discovery searches posts, not every comment. These adapters are bounded searches, not exhaustive coverage. See [data and operational boundaries](docs/ARCHITECTURE.md).
 
+**Review with AI** is an explicit action in the conversation views. It reviews up to 20 active, unreviewed or stale conversations across sources per click, with at most two provider calls running at once. The button shows the expected call count; cloud AI usage may incur charges. **AI Suggested** includes every AI-reviewed conversation, including Recommend, Maybe, and Skip verdicts. Each new review contains a verbatim excerpt from stored text, a reason, and a suggested next step. Snippet-only results cannot receive a Recommend verdict. Open the source conversation before acting on any suggestion.
+
+GreenReach keeps how each URL was discovered and preserves fuller source text when a search snippet finds the same conversation later. Similar posts are marked as possible duplicates but remain separate records. Rule scores explain product fit, expressed need, freshness, and engagement; Google position is displayed as search context. You can mark a result Useful or Not relevant to track whether recommendations helped. Edits to a conversation or project mark affected AI reviews as needing refresh.
+
 ## Import your own data
 
 Use **Add conversation**, or import a JSON array from a supported source:

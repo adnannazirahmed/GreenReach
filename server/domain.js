@@ -76,20 +76,26 @@ function netDomainInvalid(host) {
 }
 export function analyze(item, project) {
   const text = `${item.title} ${item.body}`.toLowerCase();
-  const matches = project.keywords.filter(k => text.includes(k.toLowerCase()));
-  const brands = [project.name, ...project.competitors].filter(k => text.includes(k.toLowerCase()));
-  const buying = /recommend|looking for|alternative|which tool|best .{0,40}(tool|software)|switch|replace|anyone using|what.*use/.test(text);
-  const pain = /expensive|frustrat|struggl|broken|problem|hate|missing|too much|can't|cannot/.test(text);
+  const phrase = value => new RegExp(`(^|[^a-z0-9])${value.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+')}(?=$|[^a-z0-9])`, 'i').test(text);
+  const matches = project.keywords.filter(phrase);
+  const brands = [project.name, ...project.competitors].filter(phrase);
+  const buyingPattern = /\b(recommend(?:ation)?|looking for|alternative|which tool|best .{0,40}(?:tool|software)|switch(?:ing)?|replac(?:e|ing)|anyone (?:using|used|tried)|what .{0,30} us(?:e|ing)|vs\.?|versus)\b/;
+  const negated = /\b(?:not|never|no longer|don't|do not)\s+(?:need|want|seek|recommend|looking for|switch|replace)\b/;
+  const ideaSeeking = /\b(?:saas|software|product|startup|business) ideas? (?:to|i could|i should) build\b|\bwhat (?:saas|micro saas|startup) ideas?\b/.test(text);
+  const fitPoints = matches.reduce((total, match) => total + (match.trim().includes(' ') ? 15 : 5), 0) + (brands.length ? 10 : 0);
+  const specificFit = matches.some(match => match.trim().includes(' ')) || brands.length > 0;
+  const buying = buyingPattern.test(text) && !negated.test(text) && !ideaSeeking && specificFit;
+  const pain = /\b(expensive|frustrat\w*|struggl\w*|broken|problem|hate|missing|too much|can't|cannot)\b/.test(text);
   const positive = /love|excellent|helpful|great|recommend/.test(text);
   const age = item.publishedAt ? Math.max(0, (Date.now() - Date.parse(item.publishedAt)) / 86400000) : null;
   const ignored = Boolean(item.subreddit && project.ignoredSubreddits.includes(item.subreddit.toLowerCase()));
-  const factors = { relevance: Math.min(35, matches.length * 12 + (brands.length ? 12 : 0)), intent: buying ? 30 : pain ? 18 : 5, freshness: age === null ? 0 : age < 2 ? 15 : age < 14 ? 8 : 2, search: item.googlePosition ? Math.max(0, 15 - item.googlePosition) : 0, engagement: Math.min(5, Math.floor((item.comments || 0) / 5)) };
+  const factors = { relevance: Math.min(45, fitPoints), intent: buying ? 30 : pain ? 18 : 5, freshness: age === null ? 0 : age < 2 ? 15 : age < 14 ? 8 : 2, engagement: Math.min(10, Math.floor((item.comments || 0) / 5)) };
   return {
     score: ignored ? 0 : Math.min(100, Object.values(factors).reduce((a, b) => a + b, 0)),
     intent: buying ? 'Buying intent' : pain ? 'Pain point' : 'Discussion',
     sentiment: pain ? 'negative' : positive ? 'positive' : 'neutral',
     matches, brands, factors, ignored,
-    reason: ignored ? 'Excluded by your subreddit settings.' : `${matches.length ? `Matches ${matches.join(', ')}. ` : ''}${buying ? 'Asks for a recommendation or alternative. ' : pain ? 'Describes a problem or frustration. ' : 'General discussion. '}${item.googlePosition ? `Google organic position ${item.googlePosition} for “${item.keyword}”.` : ''}`.trim(),
+    reason: ignored ? 'Excluded by your subreddit settings.' : `${matches.length ? `Product fit: matches ${matches.join(', ')}. ` : 'Product fit: no project keyword match. '}${buying ? 'Expressed need: asks for a recommendation or alternative. ' : ideaSeeking ? 'Expressed need: exploring ideas, not requesting a product. ' : buyingPattern.test(text) && !specificFit ? 'Expressed need: recommendation language, but product fit is unverified. ' : pain ? 'Expressed need: describes a problem. ' : 'Expressed need: general discussion. '}${age === null ? 'Freshness: date unknown. ' : age < 14 ? 'Freshness: recent. ' : 'Freshness: older conversation. '}Engagement: ${item.comments || 0} comments.${item.googlePosition ? ` Google position #${item.googlePosition} is search context, not buying intent.` : ''}`,
     method: 'rules',
   };
 }
@@ -114,7 +120,7 @@ export function opportunityInput(data, project) {
     searchVolume: number(data.searchVolume, 'Search volume', 1e9),
     comments: number(data.comments ?? 0, 'Comments', 1e8),
     upvotes: number(Math.max(0, data.upvotes ?? 0), 'Upvotes', 1e9),
-    publishedAt, discoveredAt: now(), source: 'import', sample: false,
+    publishedAt, discoveredAt: now(), source: 'import', textOrigin: 'import', sample: false,
     status: 'new', saved: false, notes: '', draft: '', draftMethod: null, contactStage: 'none',
   };
   if (item.googlePosition === 0) throw new AppError('Google position must be 1–100 or null.');

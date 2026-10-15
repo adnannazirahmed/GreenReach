@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { normalizeOpportunity } from './recommendations.js';
 
 const MAX_EVENTS_PER_PROJECT = 500;
 
@@ -15,6 +16,14 @@ export class Store {
       CREATE INDEX IF NOT EXISTS opportunities_project ON opportunities(project_id);
       CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, project_id TEXT, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS credentials (name TEXT PRIMARY KEY, value TEXT NOT NULL);`);
+    const oldRows = this.db.prepare('SELECT id, data FROM opportunities').all();
+    const update = this.db.prepare('UPDATE opportunities SET data=? WHERE id=?');
+    this.transaction(() => {
+      for (const row of oldRows) {
+        const item = JSON.parse(row.data);
+        if (item.recommendationVersion !== 1) update.run(JSON.stringify(normalizeOpportunity(item)), row.id);
+      }
+    });
   }
   projects() { return this.db.prepare('SELECT data FROM projects ORDER BY rowid').all().map(r => JSON.parse(r.data)); }
   project(id) { const row = this.db.prepare('SELECT data FROM projects WHERE id=?').get(id); return row ? JSON.parse(row.data) : null; }

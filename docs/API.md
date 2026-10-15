@@ -13,17 +13,21 @@ Base URL: `http://127.0.0.1:4310/api`. Use `Content-Type: application/json` on w
 | GET | `/projects/:id/events` | Most recent 60 activity events; storage retains up to 500 per project |
 | POST | `/projects/:id/import` | `{ "items": [...] }`, 1–200 validated source records |
 | POST | `/projects/:id/sync` | `{ "provider": "reddit" }`, `google`, `web`, `hackernews`, `stackexchange`, `github`, or `devto` |
+| GET | `/projects/:id/ai-review` | Current project AI review job and count awaiting review |
+| POST | `/projects/:id/ai-review` | `{}`; start an on-demand batch of at most 20 eligible conversations; returns 202 with job status |
 | POST | `/projects/:id/keywords` | `{}`; suggest keywords without applying them |
 | POST | `/projects/:id/research` | `{}`; bounded research of the configured public website, returning page links and reviewable extracted text |
 | GET | `/projects/:id/export` | JSON project, items, activity and export timestamp |
 | GET | `/projects/:id/export?format=csv` | Conversation CSV with spreadsheet formula protection |
 | GET / PATCH / DELETE | `/opportunities/:id` | Read, edit workflow fields, or remove a record |
 | POST | `/opportunities/:id/draft` | `{}`; generate and save AI draft or clearly labeled template |
-| POST | `/opportunities/:id/analyze` | `{}`; AI analysis when configured, otherwise recalculate rules |
+| POST | `/opportunities/:id/analyze` | `{}`; refresh this conversation's AI review when configured, otherwise recalculate rules |
 
 Create a project with `name`, HTTPS `website`, and optional `description`, `audience`, `voice`, `keywords` (string array), `competitors` (string array), `researchDomains` (up to 10 public exact hostnames), `ignoredSubreddits` (string array), and `monitoring` (boolean). Project PATCH accepts those same fields. Name is required, at most 80 characters. Description is at most 5000. Up to 20 keywords and 10 competitors are supported. Settings edits recalculate rules-based classifications.
 
-AI analysis, keyword suggestions, and drafts use OpenAI when both `OPENAI_API_KEY` and `OPENAI_MODEL` are configured; otherwise they use Ollama when `OLLAMA_MODEL` is configured. If neither provider is configured, analysis is rules-based and drafts are labeled templates. `OPENAI_BASE_URL` is an optional administrator-controlled OpenAI-compatible API origin.
+AI analysis, keyword suggestions, and drafts use OpenAI when both `OPENAI_API_KEY` and `OPENAI_MODEL` are configured; otherwise they use Ollama when `OLLAMA_MODEL` is configured. If neither provider is configured, analysis is rules-based and drafts are labeled templates. `OPENAI_BASE_URL` is an optional administrator-controlled OpenAI-compatible API origin. Batch review is never started by discovery or the scheduler. It processes at most two model calls concurrently, with a 30-second limit per call and a five-minute job deadline. One batch per project can run at a time. Each result is saved as it completes; a server restart clears in-memory progress but preserves completed item reviews.
+
+Opportunity JSON retains the existing `analysis` summary and adds `observations` (up to 20 discovery routes), `textOrigin` (`api`, `crawl`, `snippet`, or `import`), `aiReview`, `aiReviewStatus` (`none`, `current`, `stale`, or `legacy`), `possibleDuplicateIds`, and `feedback`. A current AI review includes `verdict` (`Recommend`, `Maybe`, or `Skip`), a verbatim `evidence` excerpt, `reason`, `nextStep`, model, timestamp, and input hash. Stale and legacy reviews remain visible in AI Suggested; the displayed score falls back to rules until refreshed. Similar posts are only grouped for review and remain independently editable.
 
 The Settings screen can store Reddit, SerpAPI, optional GitHub, and OpenAI values in the SQLite credential table, encrypted with AES-256-GCM. `/api/config` returns provider capability and credential-presence booleans only; it never returns values. Blank fields keep current values. A `clear` entry removes only the saved database value, so an environment value can still supply that credential. GreenReach generates `greenreach.credentials.key` beside the database on first run unless `CREDENTIALS_ENCRYPTION_KEY` supplies a base64-encoded 32-byte key. Keep the key with backups of the database; losing it makes saved credentials unrecoverable.
 
@@ -31,7 +35,7 @@ Website research uses the project's configured HTTPS website; the request body c
 
 The `web` sync provider requires SerpAPI and at least one project `researchDomains` hostname. It makes at most 10 Google searches across the configured domains and project terms, then fetches at most eight unique result pages within a two-minute total deadline. Only exact HTTPS hosts configured in the project are eligible; GreenReach checks robots.txt, resolves and pins public DNS, rejects redirects, and skips inaccessible pages. Extracted records include a heuristic page type and extraction score plus available author/date metadata. Listings and pages with under 80 characters of readable text are skipped. Search snippets alone are not stored as opportunities. SerpAPI may charge per query.
 
-Opportunity PATCH accepts `draft`, `notes` (each at most 15000 characters), `saved` (boolean), `status` (`new`, `reviewing`, `replied`, `dismissed`), and `contactStage` (`none`, `interested`, `contacted`, `responded`, `converted`). IDs, ownership, provider attribution, and URLs cannot be modified by PATCH. There is no external posting endpoint.
+Opportunity PATCH accepts `draft`, `notes` (each at most 15000 characters), `saved` (boolean), `feedback` (`useful`, `not_relevant`, or null), `status` (`new`, `reviewing`, `replied`, `dismissed`), and `contactStage` (`none`, `interested`, `contacted`, `responded`, `converted`). IDs, ownership, provider attribution, and URLs cannot be modified by PATCH. There is no external posting endpoint.
 
 Import shape is documented in the README. URLs are validated as HTTPS permalinks for Reddit, Hacker News, Stack Overflow/Stack Exchange, GitHub Issues/Discussions, DEV articles, or an exact hostname configured in `researchDomains`. The entire batch is validated before any write. Source records are always attributed to import, not to a live provider. Duplicate URLs are skipped; import does not restore workflow state from an export. Bad entries reject the entire batch with 400. Requests exceeding 2 MB return 413.
 

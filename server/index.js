@@ -4,10 +4,11 @@ import { fileURLToPath } from 'node:url';
 import { timingSafeEqual } from 'node:crypto';
 import { Store } from './store.js';
 import { seed } from './seed.js';
-import { id, now, str, AppError, projectInput, opportunityInput, analyze, csv } from './domain.js';
+import { id, now, str, AppError, projectInput, opportunityInput, csv } from './domain.js';
 import { capabilities, discover, draftReply, aiAnalyze, suggestKeywords } from './providers.js';
 import { researchWebsite } from './site-research.js';
 import { CredentialVault } from './credential-vault.js';
+import { mergeDiscovery, normalizeOpportunity, possibleDuplicateGroups, recalculateOpportunity, reviewHash, reviewStatus } from './recommendations.js';
 
 const STATIC = new Map([['/', ['index.html', 'text/html']], ['/app.js', ['app.js', 'text/javascript']], ['/styles.css', ['styles.css', 'text/css']], ['/favicon.svg', ['favicon.svg', 'image/svg+xml']]]);
 function equal(a, b) { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); }
@@ -17,8 +18,78 @@ export function createApp({ store = new Store(), env = process.env, fetcher = fe
   const providerEnv = () => ({ ...env, ...credentialVault.all() });
   const busy = new Set();
   const siteBusy = new Set();
+  const aiJobs = new Map();
+  let aiActive = 0;
+  const aiWaiters = [];
+  async function withAiSlot(task) {
+    if (aiActive >= 2) await new Promise(resolve => aiWaiters.push(resolve));
+    else aiActive++;
+    try { return await task(); }
+    finally { const next = aiWaiters.shift(); if (next) next(); else aiActive--; }
+  }
   const requireProject = pid => { const p = store.project(pid); if (!p) throw new AppError('Project not found.', 404); return p; };
   const requireItem = iid => { const i = store.item(iid); if (!i) throw new AppError('Opportunity not found.', 404); return i; };
+  const projectItems = pid => {
+    const project = requireProject(pid);
+    const items = store.items(pid).map(item => recalculateOpportunity(item, project));
+    const groups = possibleDuplicateGroups(items);
+    return items.map(item => ({ ...item, possibleDuplicateIds: (groups.get(item.id) || []).filter(id => id !== item.id) }));
+  };
+  const reviewCandidates = pid => {
+    const project = requireProject(pid);
+    const items = store.items(pid).map(item => recalculateOpportunity(item, project));
+    const groups = possibleDuplicateGroups(items);
+    const seenGroups = new Set();
+    return items.filter(item => !item.sample && !item.analysis.ignored && item.feedback !== 'not_relevant' && ['new', 'reviewing'].includes(item.status) && reviewStatus(item, project) !== 'current')
+      .sort((a, b) => b.analysis.score - a.analysis.score)
+      .filter(item => {
+        const group = groups.get(item.id);
+        if (!group) return true;
+        const key = [...group].sort().join(':');
+        if (seenGroups.has(key)) return false;
+        seenGroups.add(key);
+        return true;
+      });
+  };
+  function startAiReview(pid) {
+    const project = requireProject(pid);
+    if (project.sample) throw new AppError('Create your own project before reviewing conversations with AI.');
+    if (!capabilities(providerEnv()).ai) throw new AppError('Configure OpenAI or Ollama in Settings before reviewing with AI.');
+    if (aiJobs.get(pid)?.status === 'running') throw new AppError('An AI review is already active for this project.', 409);
+    const selected = reviewCandidates(pid).slice(0, 20);
+    const job = { id: id(), status: selected.length ? 'running' : 'completed', total: selected.length, completed: 0, failed: 0, errors: [], startedAt: now(), finishedAt: null };
+    aiJobs.set(pid, job);
+    if (!selected.length) { job.finishedAt = now(); return { ...job }; }
+    const deadline = Date.now() + 300_000;
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < selected.length && Date.now() < deadline) {
+        const candidate = selected[cursor++];
+        try {
+          await withAiSlot(async () => {
+            const remaining = deadline - Date.now();
+            if (remaining <= 0) return;
+            const item = requireItem(candidate.id), currentProject = requireProject(pid);
+            const review = await aiAnalyze(item, currentProject, providerEnv(), fetcher, Math.min(30000, remaining));
+            if (!review) throw new AppError('AI provider became unavailable during review.');
+            review.inputHash = reviewHash(item, currentProject);
+            const latest = requireItem(item.id);
+            store.saveItem(recalculateOpportunity({ ...latest, aiReview: review }, requireProject(pid)));
+            job.completed++;
+          });
+        } catch (error) {
+          job.failed++;
+          job.errors.push({ opportunityId: candidate.id, message: error instanceof AppError ? error.message : 'AI review failed.' });
+        }
+      }
+    };
+    void Promise.all([worker(), worker()]).finally(() => {
+      job.status = 'completed'; job.finishedAt = now();
+      job.remaining = job.total - job.completed - job.failed;
+      store.event(pid, `AI review completed: ${job.completed} reviewed, ${job.failed} failed${job.remaining ? `, ${job.remaining} not started before the time limit` : ''}.`);
+    });
+    return { ...job };
+  }
   async function sync(pid, provider) {
     const p = requireProject(pid);
     if (p.sample) throw new AppError('Create your own project to discover real conversations. The demo stays fictional.');
@@ -34,9 +105,9 @@ export function createApp({ store = new Store(), env = process.env, fetcher = fe
           if (item.analysis.ignored) continue;
           const prior = existing.get(item.url);
           if (prior) {
-          const merged = { ...prior, title: item.title, body: item.body, source: item.source, community: item.community, author: item.author, authorUrl: item.authorUrl, comments: item.comments, upvotes: item.upvotes, publishedAt: item.publishedAt, pageType: item.pageType, extractionQuality: item.extractionQuality, ...(item.googlePosition ? { googlePosition: item.googlePosition } : {}), keyword: item.keyword, lastSeenAt: now() };
-            merged.analysis = analyze(merged, p); store.saveItem(merged); existing.set(item.url, merged); updated++;
-          } else { store.insert(item); existing.set(item.url, item); inserted++; }
+            const merged = mergeDiscovery(prior, item, p);
+            store.saveItem(merged); existing.set(item.url, merged); updated++;
+          } else { const next = recalculateOpportunity(normalizeOpportunity(item), p); store.insert(next); existing.set(item.url, next); inserted++; }
         }
         // Re-read project so a concurrent settings edit survives a slow network request.
         const latest = store.project(pid);
@@ -106,13 +177,15 @@ export function createApp({ store = new Store(), env = process.env, fetcher = fe
         if (!action && method === 'GET') return send(p);
         if (!action && method === 'PATCH') {
           const data = projectInput(await body(req), p);
-          store.transaction(() => { store.saveProject(data); for (const i of store.items(pid)) store.saveItem({ ...i, analysis: analyze(i, data) }); });
-          store.event(pid, 'Project settings updated. Rules-based scores recalculated.'); return send(data);
+          store.transaction(() => { store.saveProject(data); for (const i of store.items(pid)) store.saveItem(recalculateOpportunity(i, data)); });
+          store.event(pid, 'Project settings updated. Scores recalculated; changed AI reviews need refresh.'); return send(data);
         }
-        if (!action && method === 'DELETE') { if (busy.has(pid) || siteBusy.has(pid)) throw new AppError('Wait for active research to finish before deleting this project.', 409); store.deleteProject(pid); return send({ ok: true }); }
-        if (action === 'opportunities' && method === 'GET') return send(store.items(pid));
+        if (!action && method === 'DELETE') { if (busy.has(pid) || siteBusy.has(pid) || aiJobs.get(pid)?.status === 'running') throw new AppError('Wait for active research or AI review to finish before deleting this project.', 409); store.deleteProject(pid); aiJobs.delete(pid); return send({ ok: true }); }
+        if (action === 'opportunities' && method === 'GET') return send(projectItems(pid));
         if (action === 'events' && method === 'GET') return send(store.events(pid));
         if (action === 'sync' && method === 'POST') return send(await sync(pid, (await body(req)).provider));
+        if (action === 'ai-review' && method === 'GET') return send({ ...(aiJobs.get(pid) || { status: 'idle', total: 0, completed: 0, failed: 0, errors: [] }), eligibleCount: reviewCandidates(pid).length });
+        if (action === 'ai-review' && method === 'POST') { await body(req); return send(startAiReview(pid), 202); }
         if (action === 'keywords' && method === 'POST') { await body(req); return send(await suggestKeywords(p, providerEnv(), fetcher)); }
         if (action === 'research' && method === 'POST') {
           await body(req);
@@ -132,7 +205,7 @@ export function createApp({ store = new Store(), env = process.env, fetcher = fe
           if (p.sample) throw new AppError('Create a project to import real conversations.');
           const data = await body(req);
           if (!Array.isArray(data.items) || !data.items.length || data.items.length > 200) throw new AppError('Import 1–200 items per request.');
-          const items = data.items.map(i => { if (!i || typeof i !== 'object' || Array.isArray(i)) throw new AppError('Each import item must be an object.'); return opportunityInput(i, p); });
+          const items = data.items.map(i => { if (!i || typeof i !== 'object' || Array.isArray(i)) throw new AppError('Each import item must be an object.'); return recalculateOpportunity(opportunityInput(i, p), p); });
           let inserted = 0; store.transaction(() => { for (const i of items) if (store.insert(i)) inserted++; });
           store.event(pid, `Imported ${inserted} conversations; ${items.length - inserted} duplicates skipped.`); return send({ inserted, duplicates: items.length - inserted });
         }
@@ -144,24 +217,31 @@ export function createApp({ store = new Store(), env = process.env, fetcher = fe
       }
       if (parts[1] === 'opportunities' && parts[2]) {
         const iid = parts[2], item = requireItem(iid), p = requireProject(item.projectId), action = parts[3];
-        if (!action && method === 'GET') return send(item);
+        if (!action && method === 'GET') return send(recalculateOpportunity(item, p));
         if (!action && method === 'DELETE') { store.deleteItem(iid); return send({ ok: true }); }
         if (!action && method === 'PATCH') {
           const d = await body(req), next = { ...item };
           if ('status' in d) { if (!['new', 'reviewing', 'replied', 'dismissed'].includes(d.status)) throw new AppError('Invalid status.'); next.status = d.status; }
           if ('saved' in d) { if (typeof d.saved !== 'boolean') throw new AppError('saved must be boolean.'); next.saved = d.saved; }
+          if ('feedback' in d) { if (![null, 'useful', 'not_relevant'].includes(d.feedback)) throw new AppError('Invalid recommendation feedback.'); next.feedback = d.feedback; }
           for (const key of ['draft', 'notes']) if (key in d) next[key] = str(d[key], key, 15000);
           if ('contactStage' in d) { if (!['none', 'interested', 'contacted', 'responded', 'converted'].includes(d.contactStage)) throw new AppError('Invalid pipeline stage.'); next.contactStage = d.contactStage; }
-          next.updatedAt = now(); store.saveItem(next);
+          next.updatedAt = now(); store.saveItem(recalculateOpportunity(next, p));
           if (d.status && item.status !== d.status) store.event(p.id, `Marked “${item.title}” as ${d.status}.`);
-          return send(next);
+          return send(recalculateOpportunity(next, p));
         }
         if (action === 'draft' && method === 'POST') {
           await body(req); const draft = await draftReply(item, p, providerEnv(), fetcher);
           const latest = requireItem(iid); const next = { ...latest, draft: draft.text, draftMethod: draft.method, status: latest.status === 'new' ? 'reviewing' : latest.status };
           store.saveItem(next); store.event(p.id, `${draft.method === 'template' ? 'Template' : 'AI'} draft created for “${item.title}”.`); return send(next);
         }
-        if (action === 'analyze' && method === 'POST') { await body(req); const analysis = await aiAnalyze(item, p, providerEnv(), fetcher); return send(store.saveItem({ ...requireItem(iid), analysis })); }
+        if (action === 'analyze' && method === 'POST') {
+          await body(req);
+          const review = await withAiSlot(() => aiAnalyze(item, p, providerEnv(), fetcher));
+          if (review) review.inputHash = reviewHash(item, p);
+          const latest = requireItem(iid);
+          return send(store.saveItem(recalculateOpportunity({ ...latest, aiReview: review || latest.aiReview }, requireProject(p.id))));
+        }
       }
       throw new AppError('Not found.', 404);
     } catch (e) {

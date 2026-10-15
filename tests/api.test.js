@@ -60,6 +60,59 @@ test('sync deduplicates and preserves user state; failures do not import partial
   await req(`/projects/${pid}/sync`,'POST',{provider:'google'});const items=(await req(`/projects/${pid}/opportunities`)).data;assert.equal(items.length,1);assert.equal(items[0].notes,'Keep this');assert.equal(items[0].status,'replied');
   const before=JSON.stringify(items);fail=true;calls=0;assert.equal((await req(`/projects/${pid}/sync`,'POST',{provider:'google'})).status,502);assert.equal(JSON.stringify((await req(`/projects/${pid}/opportunities`)).data),before);
 });
+test('on-demand AI batch caps at 20, runs two calls at once, and keeps partial results',async t=>{
+  let active=0,maxActive=0,calls=0;
+  const fetcher=async(_url,options)=>{
+    active++;maxActive=Math.max(active,maxActive);const callNumber=++calls;
+    const source=JSON.parse(JSON.parse(options.body).messages[1].content);
+    await new Promise(resolve=>setTimeout(resolve,15));
+    active--;
+    const review={relevance:85,intent:'Buying intent',sentiment:'neutral',verdict:'Recommend',evidence:source.title,reason:'The title asks about a tool.',nextStep:'Read and answer the source conversation.'};
+    return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(callNumber===1?{...review,evidence:'Invented quote'}:review)}}]}));
+  };
+  const {req}=await app(t,{env:{OPENAI_API_KEY:'fixture-key',OPENAI_MODEL:'fixture-model'},fetcher});
+  const pid=(await req('/projects','POST',project)).data.id;
+  const names=['alpha','bravo','charlie','delta','echo','foxtrot','golf','hotel','india','juliet','kilo','lima','mango','november','oscar','papa','quebec','romeo','sierra','tango','uniform','victor'];
+  const items=names.map((name,index)=>({title:`Need ${name} project management software for agencies`,body:`Our agency ${name} needs project management software to manage client work and deadlines with a better workflow. We want to choose a tool soon.`,url:`https://reddit.com/r/SaaS/comments/a${index+10}/title/`}));
+  assert.equal((await req(`/projects/${pid}/import`,'POST',{items})).data.inserted,22);
+  const before=await req(`/projects/${pid}/ai-review`);assert.equal(before.data.eligibleCount,22);
+  const started=await req(`/projects/${pid}/ai-review`,'POST',{});assert.equal(started.status,202);assert.equal(started.data.total,20);
+  assert.equal((await req(`/projects/${pid}/ai-review`,'POST',{})).status,409);
+  let status;
+  for(let n=0;n<100;n++){status=(await req(`/projects/${pid}/ai-review`)).data;if(status.status==='completed')break;await new Promise(resolve=>setTimeout(resolve,20));}
+  assert.equal(status.status,'completed');assert.equal(status.completed,19);assert.equal(status.failed,1);assert.equal(maxActive,2);assert.equal(calls,20);
+  const saved=(await req(`/projects/${pid}/opportunities`)).data;
+  assert.equal(saved.filter(i=>i.aiReviewStatus==='current').length,19);
+  assert.equal(saved.filter(i=>i.aiReview).length,19);
+  assert.equal(status.eligibleCount,3);
+  assert.equal((await req(`/opportunities/${saved[0].id}`,'PATCH',{feedback:'useful'})).data.feedback,'useful');
+  assert.equal((await req(`/opportunities/${saved[0].id}`,'PATCH',{feedback:'bad'})).status,400);
+});
+test('parallel project batches share the two-call AI limit',async t=>{
+  let active=0,maxActive=0;
+  const fetcher=async(_url,options)=>{
+    active++;maxActive=Math.max(maxActive,active);
+    const source=JSON.parse(JSON.parse(options.body).messages[1].content);
+    await new Promise(resolve=>setTimeout(resolve,20));active--;
+    const review={relevance:70,intent:'Discussion',sentiment:'neutral',verdict:'Maybe',evidence:source.title,reason:'The source mentions a workflow.',nextStep:'Read the source.'};
+    return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(review)}}]}));
+  };
+  const {req}=await app(t,{env:{OPENAI_API_KEY:'fixture-key',OPENAI_MODEL:'fixture-model'},fetcher});
+  const ids=[];
+  for(const name of ['One','Two']){
+    const pid=(await req('/projects','POST',{...project,name})).data.id;ids.push(pid);
+    const items=['alpha','bravo','charlie'].map((word,n)=>({title:`${name} ${word} project management request`,body:`The ${name} team needs a better project management workflow for several client projects. We are discussing software options and asking for practical recommendations.`,url:`https://reddit.com/r/SaaS/comments/${name.toLowerCase()}${n}/title/`}));
+    await req(`/projects/${pid}/import`,'POST',{items});
+  }
+  await Promise.all(ids.map(pid=>req(`/projects/${pid}/ai-review`,'POST',{})));
+  for(let n=0;n<100;n++){
+    const statuses=await Promise.all(ids.map(pid=>req(`/projects/${pid}/ai-review`)));
+    if(statuses.every(s=>s.data.status==='completed'))break;
+    await new Promise(resolve=>setTimeout(resolve,15));
+  }
+  assert.equal(maxActive,2);
+  for(const pid of ids)assert.equal((await req(`/projects/${pid}/ai-review`)).data.completed,3);
+});
 test('SQLite data survives reopen',()=>{const dir=mkdtempSync(join(tmpdir(),'greenreach-test-'));try{const path=join(dir,'db.sqlite');const db=new Store(path);db.saveProject({...project,id:'persist'});db.close();const reopened=new Store(path);assert.equal(reopened.project('persist').name,'Acme');reopened.close();}finally{rmSync(dir,{recursive:true,force:true});}});
 test('MCP handshake, discovery, read-only tools, authentication and validation',async t=>{
   const {req,base}=await app(t);const pid=(await req('/projects','POST',project)).data.id;await req(`/projects/${pid}/import`,'POST',{items:[input]});

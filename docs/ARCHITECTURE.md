@@ -10,26 +10,25 @@ Node 24 serves a static ES-module frontend and a JSON API using `node:http`. Nat
 
 1. A user defines product facts, audience, voice, keywords, competitors, and exclusions. An explicit website research request can read the configured public HTTPS site and up to three relevant same-host links; extracted text remains a review step before it changes project context.
 2. A manual import or optional discovery run normalizes source records. Reddit OAuth queries posts; Hacker News uses Algolia's HN Search API; Stack Exchange uses its public API; GitHub searches public open issues; DEV uses public tagged Forem articles. Google discovery filters natural keyword results to supported conversation permalinks. Locked, archived, and NSFW posts are skipped by the Reddit adapter.
-3. Canonical permalinks deduplicate within each project. A Google snippet and a direct source result for the same permalink converge on the same record. User-authored draft, notes, state, and pipeline stage survive sync.
-4. Rules assign relevance factors, buying intent, overall sentiment, and literal brand matches. Ignored communities score zero and are excluded from working views.
-5. Optional explicit AI analysis blends a model relevance score with the rules score. Optional draft generation sends the supplied text and product context to the configured OpenAI-compatible provider or Ollama; the user edits, copies, posts externally, and manually marks replied.
+3. Canonical permalinks deduplicate within each project. Discovery observations retain routes and Google keywords/positions. A fuller source body wins over a Google snippet; user-authored drafts, notes, feedback, state, and pipeline stage survive sync. Highly similar posts are marked as possible duplicates while remaining separate records.
+4. Rules assign product-fit, intent, freshness, and engagement factors plus overall sentiment and literal brand matches. Google position is retained as context without increasing need score. Ignored communities score zero and are excluded from working views.
+5. An explicit AI action reviews one record or up to 20 eligible records across sources. It stores a verdict, a verbatim evidence excerpt, reason, and next step separately from rules. Current reviews blend model relevance with the rules score; source or project changes mark reviews stale. Optional draft generation sends the supplied text and product context to the configured OpenAI-compatible provider or Ollama; the user edits, copies, posts externally, and manually marks replied.
 6. Counts and charts derive from stored records. No metrics estimate reach or revenue. MCP only reads these records.
 
 ## Scoring
 
-Rules sum five explicit components and cap at 100:
+Rules sum four explicit components and cap at 100:
 
 | Component | Maximum | Rule |
 | --- | --- | --- |
-| Relevance | 35 | 12 points per literal keyword match, plus 12 if any tracked brand matches |
-| Intent | 30 | 30 for recommendation/alternative language; otherwise 18 for pain language, otherwise 5 |
+| Relevance | 45 | 15 points per matched phrase, 5 per matched single word, plus 10 if any tracked brand matches |
+| Intent | 30 | 30 for recommendation/alternative language with project fit; otherwise 18 for pain language, otherwise 5 |
 | Freshness | 15 | 15 for under 2 days, 8 under 14 days, 2 for older, 0 for unknown |
-| Search position | 14 | `max(0, 15 - position)` for an observed Google position |
-| Engagement | 5 | One point per five comments, capped at 5 |
+| Engagement | 10 | One point per five comments, capped at 10 |
 
-The score is a prioritization heuristic, **not a probability**. Literal matching can misclassify common brand names and negation. Text-level sentiment is not brand-level sentiment. Rules do not understand sarcasm. Updates recalculate scores; time passing alone does not continuously rescore the database.
+The score is a prioritization heuristic, **not a probability**. Phrase matching uses word boundaries and suppresses some negated requests and idea-seeking posts, but common brand names, sarcasm, and implied needs can still be misclassified. Text-level sentiment is not brand-level sentiment. Updates recalculate scores; time passing alone does not continuously rescore the database.
 
-AI analysis requests structured output with bounded relevance, a fixed intent enum, a fixed sentiment enum, and reasoning. The OpenAI-compatible adapter uses Chat Completions JSON mode and sets `store: false`; Ollama uses its JSON response mode. OpenAI is selected when both its key and model are configured; otherwise Ollama is selected when its model is configured. The blended score is `round(0.4 × ruleScore + 0.6 × modelRelevance)`. Invalid output fails visibly and leaves the prior analysis intact. Prompts treat source material as untrusted and discourage fabricated experience or features. This reduces but does not eliminate model errors. Source content cannot invoke tools; generated output is rendered as text.
+AI analysis requests structured output with bounded relevance, fixed intent/sentiment/verdict enums, an exact excerpt from the stored title or body, a reason, and a next step. Excerpts are validated before saving; snippet-only or thin results cannot receive Recommend. The OpenAI-compatible adapter uses Chat Completions JSON mode and sets `store: false`; Ollama uses its JSON response mode. OpenAI is selected when both its key and model are configured; otherwise Ollama is selected when its model is configured. The blended score is `round(0.4 × ruleScore + 0.6 × modelRelevance)` while the review input hash remains current. Invalid output fails visibly and leaves the prior analysis intact. Prompts treat source material as untrusted and discourage fabricated experience or features. This reduces but does not eliminate model errors. Source content cannot invoke tools; generated output is rendered as text.
 
 ## Discovery and scheduling
 
