@@ -6,6 +6,23 @@ GreenReach is an independent implementation inspired by research into Redreach a
 
 ![GreenReach dashboard with explicitly fictional demo conversations](docs/images/dashboard.jpg)
 
+The image above uses fictional Orbit demo data. The screenshots below show the GreenReach workspace with saved, source-linked public search results.
+
+<table>
+  <tr>
+    <td align="center"><strong>Overview</strong></td>
+    <td align="center"><strong>Opportunities</strong></td>
+    <td align="center"><strong>Insights</strong></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/greenreach-overview.png" alt="GreenReach overview with live workspace metrics" width="320"></td>
+    <td><img src="docs/images/greenreach-opportunities.png" alt="GreenReach opportunities from public Reddit results" width="320"></td>
+    <td><img src="docs/images/greenreach-insights.png" alt="GreenReach analytics from collected conversations" width="320"></td>
+  </tr>
+</table>
+
+These views show saved discovery records rather than demo conversations. Provider results can age; refresh discovery to see current public results.
+
 ## Run locally
 
 Install Node.js **24 or newer**, then from this directory:
