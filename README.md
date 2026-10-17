@@ -1,6 +1,10 @@
-# GreenReach
+<p align="center">
+  <img src="public/favicon.svg" alt="GreenReach leaf logo" width="88">
+</p>
 
-**An open-source listening workspace for finding useful public conversations and turning them into genuine relationships.**
+<h1 align="center">GreenReach</h1>
+
+<p align="center"><strong>An open-source listening workspace for finding useful public conversations and turning them into genuine relationships.</strong></p>
 
 GreenReach is an independent implementation inspired by research into Redreach and its competitors. It is MIT licensed, self-hosted, and built with Node.js 24 and SQLite. There are **zero runtime dependencies** and no build step. It is a working first release, not a claim of complete Redreach parity.
 
