@@ -1,0 +1,21 @@
+services:
+  greenreach:
+    build: .
+    image: greenreach:local
+    container_name: greenreach
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4310:4310"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4310
+      DATABASE_PATH: /app/data/greenreach.db
+      APP_TOKEN: ${APP_TOKEN:-}
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - greenreach-data:/app/data
+
+volumes:
+  greenreach-data:

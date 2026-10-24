@@ -27,17 +27,33 @@ The image above uses fictional Orbit demo data. The screenshots below show the G
 
 These views show saved discovery records rather than demo conversations. Provider results can age; refresh discovery to see current public results.
 
+## Install with Docker (recommended)
+
+Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) (or Docker Engine with Compose), then run this from the project folder:
+
+```sh
+docker compose up --build -d
+```
+
+Open **http://127.0.0.1:4310**. On first launch, Docker creates a random workspace token and prints it once:
+
+```sh
+docker compose logs greenreach
+```
+
+Enter that token in the GreenReach login screen. The token and SQLite database are kept in the `greenreach-data` Docker volume, so they survive container restarts and image updates. To stop GreenReach, run `docker compose down`; to start it again, run `docker compose up -d`.
+
+To choose your own token or configure provider credentials, create a `.env` file from `.env.example` before starting. The Docker Compose configuration listens on this computer only. For LAN access, change the `ports` entry in `compose.yaml` to `4310:4310`; keep a strong `APP_TOKEN` set in `.env` and put an HTTPS reverse proxy in front of any internet-facing deployment. Back up the `greenreach-data` volume to preserve your workspace and encryption key.
+
 ## Run locally
 
-Install Node.js **24 or newer**, then from this directory:
+For development without Docker, install Node.js **24 or newer**, then from this directory:
 
 ```sh
 npm start
 ```
 
-Open **http://127.0.0.1:4310**. No installation or API keys are needed to explore the fictional Orbit demo or use manual imports, scoring, editing, and exports. Create your own project to import real conversations.
-
-The app binds to loopback by default and stores data in `data/greenreach.db`. Node may print an experimental SQLite warning. Keep the process running while using the app. `npm run dev` restarts the server on source edits.
+Open **http://127.0.0.1:4310**. No API keys are needed to explore the fictional Orbit demo or use manual imports, scoring, editing, and exports. Create your own project to import real conversations. The app stores data in `data/greenreach.db`. Keep the process running while using the app; `npm run dev` restarts the server on source edits.
 
 ## What works
 
