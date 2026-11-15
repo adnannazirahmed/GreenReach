@@ -1,4 +1,9 @@
 <p align="center">
+  <a href="docs/videos/greenreach-launch.mp4"><img src="docs/images/greenreach-launch.gif" alt="GreenReach launch video — click to open the version with audio" width="960"></a>
+</p>
+<p align="center"><a href="docs/videos/greenreach-launch.mp4">Watch with audio (MP4)</a></p>
+
+<p align="center">
   <img src="public/favicon.svg" alt="GreenReach leaf logo" width="88">
 </p>
 
